@@ -1,9 +1,10 @@
-use std::vec::Vec;
+use std::{mem::{self, size_of}, vec::Vec};
 
-use bytemuck::bytes_of;
-use wgpu::{include_wgsl, Device, MultisampleState, RenderPass, RenderPipeline, RenderPipelineDescriptor, SurfaceConfiguration};
+use bytemuck::{bytes_of, Pod, Zeroable};
+use log::debug;
+use wgpu::{include_wgsl, BufferUsages, Device, MultisampleState, RenderPass, RenderPipeline, RenderPipelineDescriptor, SurfaceConfiguration};
 
-use crate::{Vertex, WorldView};
+use crate::{BBox, Vertex, WorldView};
 
 use super::FrameData;
 
@@ -12,7 +13,16 @@ use crate::units::VUnit;
 pub struct FrameRenderer {
     data: Vec<FrameData>,
     pipeline: RenderPipeline,
-    buffer_handle: wgpu::Buffer,
+    frame_buffer_handle: wgpu::Buffer,
+    changed: Option<usize>,
+    camera_bg_handle: wgpu::BindGroup,
+    camera_buffer_handle: wgpu::Buffer,
+    camera_data: Vec<Camera>,
+}
+#[derive(Pod, Zeroable, Clone, Copy)]
+#[repr(C)]
+pub struct Camera {
+    bbox: BBox,
 }
 
 impl FrameRenderer {
@@ -22,10 +32,42 @@ impl FrameRenderer {
             label: Some("frame shader"),
             source: shader.source
         });
+        let camera_buffer_handle = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("camera buffer"),
+            size: (size_of::<Camera>() * 1000) as u64,
+            usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let camera_bg_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Camera buffer layout"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer { 
+                        ty: wgpu::BufferBindingType::Storage { read_only: true }, 
+                        has_dynamic_offset: false, 
+                        min_binding_size: None 
+                    },
+                    count: None,
+                }
+            ],
+        });
+        let camera_bg_handle = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("camera bg"),
+            layout: & camera_bg_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: camera_buffer_handle.as_entire_binding(),
+                }
+            ]
+        });
         let pipeline_layout_descriptor = wgpu::PipelineLayoutDescriptor {
             label: Some("frame pipeline layout"),
             bind_group_layouts: &[
                 world_view_layout,
+                &camera_bg_layout,
             ],
             push_constant_ranges: &[],
         };
@@ -72,22 +114,48 @@ impl FrameRenderer {
         });
         Self {
             pipeline,
-            buffer_handle,
-            data: vec![
-                FrameData {
-                    data: [VUnit(100); 4],
-                    margin: [VUnit(0); 4]
-                }
-            ],
+            frame_buffer_handle: buffer_handle,
+            data: vec![],
+            changed: None,
+            camera_buffer_handle,
+            camera_data: vec![],
+            camera_bg_handle,
         }
     }
     pub fn prepare(&mut self, queue: &wgpu::Queue){
-        queue.write_buffer(&self.buffer_handle, 0, bytemuck::cast_slice(&self.data.as_slice()))
+        match self.changed {
+            Some(_n)=>{
+                queue.write_buffer(&self.frame_buffer_handle, 0, bytemuck::cast_slice(&self.data[..]));
+                queue.write_buffer(&self.camera_buffer_handle, 0, bytemuck::cast_slice(&self.camera_data[..]));
+            }
+            None => (),
+        };
+        self.changed = None;
+        
     }
     pub fn render<'rp>(&'rp self, render_pass: &mut RenderPass<'rp> ) {
         render_pass.set_pipeline(&self.pipeline);
-        render_pass.set_vertex_buffer(1, self.buffer_handle.slice(..));
-        render_pass.draw(0..4 as u32, 0..self.data.len() as u32)
+        render_pass.set_vertex_buffer(1, self.frame_buffer_handle.slice(..));
+        render_pass.draw(0..4 as u32, 0..self.data.len() as u32);
 
+    }
+    pub fn add(&mut self, mut frame: FrameData) -> usize {
+        self.camera_data.push(Camera { bbox: frame.data });
+        frame.camera_index = (self.camera_data.len() - 1) as u16;
+        self.data.push(frame);
+        self.changed = Some(self.data.len() - 1);
+        return self.data.len() - 1;
+    }
+    pub fn update(&mut self, handle: usize, x: VUnit, y:VUnit, w: VUnit, h: VUnit) {
+        let frame = &mut self.data[handle];
+        frame.data = BBox{x,y,w,h};
+        self.camera_data[frame.camera_index as usize].bbox = BBox{x,y,w,h};
+        self.changed = match self.changed {
+            None => Some(handle),
+            Some(u)=> Some(usize::max(u, handle)),
+        }
+    }
+    pub fn get(&self, handle: usize) -> FrameData {
+        self.data[handle]
     }
 }

@@ -3,15 +3,21 @@
 struct VertexInput {
     @location(0) position: vec2<f32>,
     @location(1) vertex_xywh: vec4<i32>,
-    @location(2) margin: vec4<i32>
+    @location(2) margin: vec4<i32>,
+    @location(3) color: vec4<f32>
 };
 
 
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
+    @location(0) color: vec4<f32>,
 };
 
 struct WorldView {
+    wh: vec2<i32>
+}
+
+struct Camera {
     xywh: vec4<i32>
 };
 
@@ -23,9 +29,13 @@ fn vs_main(
     v: VertexInput
 ) -> VertexOutput {
     var out: VertexOutput;
-    let rel_pos: vec2<f32> =  vec2<f32>(1.0,-1.0) * ((vec2<f32>(v.vertex_xywh.xy) + vec2<f32>(wv.xywh.xy)) / vec2<f32>(wv.xywh.zw)*2.0 - vec2<f32>(1.0,1.0));
-    let rel_dim: vec2<f32> = vec2<f32>(v.vertex_xywh.zw) / vec2<f32>(wv.xywh.zw);
-    out.clip_position = vec4<f32>(v.position * rel_dim + rel_pos,1.0,1.0);
+    let xywh = v.vertex_xywh - vec4<i32>(-v.margin.z, -v.margin.x, v.margin.z + v.margin.w, v.margin.x + v.margin.y);
+    let abs_pos = vec2<f32>(xywh.xy);
+    let abs_dim = vec2<f32>(xywh.zw);
+    let rel_pos: vec2<f32> = abs_pos / vec2<f32>(wv.wh);
+    let rel_dim: vec2<f32> = abs_dim / vec2<f32>(wv.wh);
+    out.clip_position = vec4<f32>( (((v.position / vec2<f32>(2.0, -2.0) + vec2<f32>(0.5, 0.5)) * rel_dim + rel_pos) * vec2<f32>(2.0,-2.0) - vec2<f32>(1.0, -1.0)), 1.0,1.0);
+    out.color = v.color;
     return out;
 }
 
@@ -33,5 +43,5 @@ fn vs_main(
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    return vec4<f32>(1.0,1.0,1.0, 0.1);
+    return in.color;
 }

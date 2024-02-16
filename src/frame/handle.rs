@@ -1,5 +1,5 @@
 
 #[derive(Clone)]
 pub struct FrameHandle {
-    index: usize,
+    data_index: usize,
 }

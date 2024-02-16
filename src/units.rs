@@ -3,15 +3,15 @@ use std::{fmt, io::{BufWriter, Read}};
 use bytemuck::{Pod, Zeroable};
 
 
-pub type Pxt = f32;
-pub type Rlt = f32;
-pub type Frt = f32;
+pub type Pixelt = i32;
+pub type Ratiot = f32;
+pub type Fractiont = u32;
 
 pub enum UserUnits {
     Zero,
-    Pixel (Pxt),
-    Rel (Rlt),
-    Frac (Frt),
+    Pixel (Pixelt),
+    Ratio (Ratiot),
+    Fraction (Fractiont),
 }
 
 /// i32 but 6 bits are for sub VUnit precision the max value is

@@ -2,7 +2,7 @@ use std::mem;
 
 use bytemuck::{NoUninit, Pod, Zeroable};
 
-use crate::units::VUnit;
+use crate::{units::VUnit, BBox, MarginBox};
 
 #[repr(usize)]
 #[derive(Clone, Copy)]
@@ -23,8 +23,11 @@ pub enum Border {
 #[derive(Pod, Clone, Copy, Zeroable)]
 #[repr(C)]
 pub struct FrameData {
-    pub data: [VUnit; 4],
-    pub margin: [VUnit; 4],
+    pub data: BBox,
+    pub margin: MarginBox,
+    pub color: [u8; 4],
+    pub camera_index: u16,
+    pub _pad1: u16,
 }
 
 impl FrameData {
@@ -40,8 +43,13 @@ impl FrameData {
                 },
                 wgpu::VertexAttribute {
                     format: wgpu::VertexFormat::Sint32x4,
-                    offset: mem::size_of::<VUnit>() as u64 * 4u64,
+                    offset: mem::size_of::<[VUnit; 4]>() as u64,
                     shader_location: 2,
+                },
+                wgpu::VertexAttribute {
+                    format: wgpu::VertexFormat::Unorm8x4,
+                    offset: mem::size_of::<([VUnit; 4], [VUnit; 4])>() as u64,
+                    shader_location: 3,
                 }
             ]
         }

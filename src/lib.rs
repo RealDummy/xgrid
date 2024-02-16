@@ -2,8 +2,9 @@ use std::iter;
 
 use bytemuck::{bytes_of, Pod, Zeroable};
 use frame::FrameRenderer;
+use grid::{Grid, GridRenderer, GridRepeatDir, GridSpacer, SpacerType};
 use log::{info, warn};
-use units::VUnit;
+use units::{UserUnits, VUnit};
 use wgpu::{util::DeviceExt, BufferSlice, PresentMode};
 use winit::{
     dpi::PhysicalSize, event::*, event_loop::{ControlFlow, EventLoop}, keyboard::{Key, NamedKey, PhysicalKey, SmolStr}, window::{Window, WindowBuilder}
@@ -69,13 +70,29 @@ const VERTICES: &[Vertex] = &[
         position: [1.0, -1.0],
     }, // D
 ];
+
 #[derive(Pod, Zeroable, Clone, Copy)]
 #[repr(C)]
 pub struct WorldView {
-    x: VUnit,
-    y: VUnit,
     w: VUnit,
     h: VUnit,
+}
+
+#[derive(Pod, Zeroable, Clone, Copy)]
+#[repr(C)]
+pub struct BBox {
+    pub x: VUnit,
+    pub y: VUnit,
+    pub w: VUnit,
+    pub h: VUnit,
+}
+#[derive(Pod, Zeroable, Clone, Copy)]
+#[repr(C)]
+pub struct MarginBox {
+    pub top: VUnit,
+    pub bottom: VUnit,
+    pub left: VUnit,
+    pub right: VUnit,
 }
 
 
@@ -87,7 +104,7 @@ struct State<'a> {
     window: &'a Window,
     config: wgpu::SurfaceConfiguration,
     size: PhysicalSize<f64>,
-    frame_renderer: FrameRenderer,
+    grid_renderer: GridRenderer,
     world_view: WorldView,
     world_view_buffer: wgpu::Buffer,
     world_view_bind_group: wgpu::BindGroup,
@@ -139,9 +156,7 @@ impl<'window> State<'window> {
             .unwrap();
 
         let surface_caps = surface.get_capabilities(&adapter);
-        // Shader code in this tutorial assumes an Srgb surface texture. Using a different
-        // one will result all the colors comming out darker. If you want to support non
-        // Srgb surfaces, you'll need to account for that when drawing to the frame.
+
         let surface_format = surface_caps
             .formats
             .iter()
@@ -170,8 +185,6 @@ impl<'window> State<'window> {
             usage: wgpu::BufferUsages::VERTEX,
         });
         let world_view = WorldView {
-            x: VUnit(0),
-            y: VUnit(0), 
             w: VUnit(size.width as i32), 
             h: VUnit(size.height as i32),
         };
@@ -205,7 +218,58 @@ impl<'window> State<'window> {
             ],
             label: Some("camera_bind_group"),
         });
-        let frame_renderer = FrameRenderer::new(&device, &config, &world_view_bind_group_layout);
+        
+
+        let camera = BBox {
+            x: VUnit(0 as i32), 
+            y: VUnit(0 as i32),
+            w: VUnit(size.width as i32), 
+            h: VUnit(size.height as i32),
+        };
+        let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor{
+            label: Some("world view"),
+            contents: bytes_of(&camera),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+        let camera_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("World view bg layout"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                    ty: wgpu::BindingType::Buffer { 
+                        ty: wgpu::BufferBindingType::Uniform, 
+                        has_dynamic_offset: false, 
+                        min_binding_size: None 
+                    },
+                    count: None,
+                }
+            ],
+        });
+        let camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &camera_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: world_view_buffer.as_entire_binding(),
+                }
+            ],
+            label: Some("camera_bind_group"),
+        });
+
+
+        let mut grid_renderer = GridRenderer::new(&device, &config, &world_view_bind_group_layout);
+        grid_renderer.add(Grid::new(0, vec![
+            SpacerType::Unit(UserUnits::Pixel(100)),
+            SpacerType::Unit(UserUnits::Fraction(1)),
+            SpacerType::Unit(UserUnits::Fraction(1)),
+            SpacerType::Unit(UserUnits::Fraction(1)),
+
+        ], vec![
+            SpacerType::Unit(UserUnits::Pixel(200)),
+            SpacerType::Unit(UserUnits::Ratio(0.44)),
+            SpacerType::Unit(UserUnits::Fraction(1))
+        ], None));
         Self {
             surface,
             device,
@@ -214,7 +278,7 @@ impl<'window> State<'window> {
             size: size.cast(),
             vertex_buffer,
             window,
-            frame_renderer,
+            grid_renderer,
             world_view,
             world_view_buffer,
             world_view_bind_group,
@@ -234,6 +298,9 @@ impl<'window> State<'window> {
 
             self.world_view.w = VUnit(new_size.width as i32);
             self.world_view.h = VUnit(new_size.height as i32);
+
+
+            self.queue.write_buffer(&self.world_view_buffer, 0, bytes_of(&self.world_view));
         }
     }
 
@@ -247,8 +314,7 @@ impl<'window> State<'window> {
     }
 
     fn update(&mut self) {
-        self.queue.write_buffer(&self.world_view_buffer, 0, bytes_of(&self.world_view));
-        self.frame_renderer.prepare(&self.queue);
+        self.grid_renderer.prepare(&self.queue);
     }
 
     fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
@@ -283,7 +349,7 @@ impl<'window> State<'window> {
             });
             render_pass.set_bind_group(0, &self.world_view_bind_group, &[]);
             render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-            self.frame_renderer.render(&mut render_pass);
+            self.grid_renderer.render(&mut render_pass);
         }
 
         self.queue.submit(iter::once(encoder.finish()));
@@ -300,7 +366,7 @@ pub async fn run() {
             std::panic::set_hook(Box::new(console_error_panic_hook::hook));
             console_log::init_with_level(log::Level::Warn).expect("Could't initialize logger");
         } else {
-            env_logger::init();
+            env_logger::builder().filter_level(log::LevelFilter::Error).filter_module("xgrid", log::LevelFilter::Trace).target(env_logger::Target::Stdout).init();
         }
     }
 
