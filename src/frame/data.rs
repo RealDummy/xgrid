@@ -50,9 +50,18 @@ impl FrameData {
                     format: wgpu::VertexFormat::Unorm8x4,
                     offset: mem::size_of::<([VUnit; 4], [VUnit; 4])>() as u64,
                     shader_location: 3,
+                },
+                wgpu::VertexAttribute {
+                    format: wgpu::VertexFormat::Uint32,
+                    offset: mem::size_of::<([VUnit; 4], [VUnit; 4], [u8; 4])>() as u64,
+                    shader_location: 4,
                 }
             ]
         }
     }
     pub const BUFFER_INIT_BYTE_COUNT: u64 = 100 * mem::size_of::<Self>() as u64;
+}
+
+pub trait FrameSizer {
+    fn size_next(&self);
 }

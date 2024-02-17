@@ -4,6 +4,7 @@ use bytemuck::{bytes_of, Pod, Zeroable};
 use frame::FrameRenderer;
 use grid::{Grid, GridRenderer, GridRepeatDir, GridSpacer, SpacerType};
 use log::{info, warn};
+use manager::UpdateManager;
 use units::{UserUnits, VUnit};
 use wgpu::{util::DeviceExt, BufferSlice, PresentMode};
 use winit::{
@@ -16,6 +17,7 @@ use wasm_bindgen::prelude::*;
 mod units;
 mod grid;
 mod frame;
+mod manager;
 
 
 #[repr(C)]
@@ -78,7 +80,7 @@ pub struct WorldView {
     h: VUnit,
 }
 
-#[derive(Pod, Zeroable, Clone, Copy)]
+#[derive(Pod, Zeroable, Clone, Copy, Debug)]
 #[repr(C)]
 pub struct BBox {
     pub x: VUnit,
@@ -104,7 +106,7 @@ struct State<'a> {
     window: &'a Window,
     config: wgpu::SurfaceConfiguration,
     size: PhysicalSize<f64>,
-    grid_renderer: GridRenderer,
+    update_manager: UpdateManager,
     world_view: WorldView,
     world_view_buffer: wgpu::Buffer,
     world_view_bind_group: wgpu::BindGroup,
@@ -257,9 +259,8 @@ impl<'window> State<'window> {
             label: Some("camera_bind_group"),
         });
 
-
-        let mut grid_renderer = GridRenderer::new(&device, &config, &world_view_bind_group_layout);
-        grid_renderer.add(Grid::new(0, vec![
+        let mut update_manager = UpdateManager::new(&device, &config, &world_view_bind_group_layout, &world_view);
+        let gh = update_manager.add_grid(0, vec![
             SpacerType::Unit(UserUnits::Pixel(100)),
             SpacerType::Unit(UserUnits::Fraction(1)),
             SpacerType::Unit(UserUnits::Fraction(1)),
@@ -269,7 +270,13 @@ impl<'window> State<'window> {
             SpacerType::Unit(UserUnits::Pixel(200)),
             SpacerType::Unit(UserUnits::Ratio(0.44)),
             SpacerType::Unit(UserUnits::Fraction(1))
-        ], None));
+        ], None);
+        
+        for i in 0..12 {
+            update_manager.add_frame(gh);
+  
+        }
+
         Self {
             surface,
             device,
@@ -278,7 +285,7 @@ impl<'window> State<'window> {
             size: size.cast(),
             vertex_buffer,
             window,
-            grid_renderer,
+            update_manager,
             world_view,
             world_view_buffer,
             world_view_bind_group,
@@ -299,8 +306,9 @@ impl<'window> State<'window> {
             self.world_view.w = VUnit(new_size.width as i32);
             self.world_view.h = VUnit(new_size.height as i32);
 
-
             self.queue.write_buffer(&self.world_view_buffer, 0, bytes_of(&self.world_view));
+
+            self.update_manager.update_world(&self.world_view);
         }
     }
 
@@ -314,7 +322,7 @@ impl<'window> State<'window> {
     }
 
     fn update(&mut self) {
-        self.grid_renderer.prepare(&self.queue);
+        ()
     }
 
     fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
@@ -326,7 +334,7 @@ impl<'window> State<'window> {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("Render Encoder"),
             });
-
+        self.update_manager.prepare(&self.queue);
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
@@ -349,7 +357,7 @@ impl<'window> State<'window> {
             });
             render_pass.set_bind_group(0, &self.world_view_bind_group, &[]);
             render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-            self.grid_renderer.render(&mut render_pass);
+            self.update_manager.render(&mut render_pass);
         }
 
         self.queue.submit(iter::once(encoder.finish()));

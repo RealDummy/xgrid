@@ -1,10 +1,10 @@
 [package]
-name = "xgrid"
+name = "xgrid_test"
 version = "0.1.0"
 edition = "2021"
 
-
 [lib]
+name = "xgrid"
 crate-type = ["cdylib", "rlib"]
 
 

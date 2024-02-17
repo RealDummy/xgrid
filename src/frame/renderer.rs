@@ -42,7 +42,7 @@ impl FrameRenderer {
             label: Some("Camera buffer layout"),
             entries: &[
                 wgpu::BindGroupLayoutEntry {
-                    binding: 1,
+                    binding: 0,
                     visibility: wgpu::ShaderStages::VERTEX,
                     ty: wgpu::BindingType::Buffer { 
                         ty: wgpu::BufferBindingType::Storage { read_only: true }, 
@@ -123,19 +123,18 @@ impl FrameRenderer {
         }
     }
     pub fn prepare(&mut self, queue: &wgpu::Queue){
-        match self.changed {
-            Some(_n)=>{
                 queue.write_buffer(&self.frame_buffer_handle, 0, bytemuck::cast_slice(&self.data[..]));
                 queue.write_buffer(&self.camera_buffer_handle, 0, bytemuck::cast_slice(&self.camera_data[..]));
-            }
-            None => (),
-        };
+
         self.changed = None;
         
     }
     pub fn render<'rp>(&'rp self, render_pass: &mut RenderPass<'rp> ) {
+        debug!("FRAME RENDER: {} frames", self.camera_data.len());
+        debug!("CAMERA: {:?}", self.camera_data[0].bbox);
         render_pass.set_pipeline(&self.pipeline);
         render_pass.set_vertex_buffer(1, self.frame_buffer_handle.slice(..));
+        render_pass.set_bind_group(1, &self.camera_bg_handle, &[]);
         render_pass.draw(0..4 as u32, 0..self.data.len() as u32);
 
     }
@@ -146,10 +145,10 @@ impl FrameRenderer {
         self.changed = Some(self.data.len() - 1);
         return self.data.len() - 1;
     }
-    pub fn update(&mut self, handle: usize, x: VUnit, y:VUnit, w: VUnit, h: VUnit) {
+    pub fn update(&mut self, handle: usize, bounds: BBox) {
         let frame = &mut self.data[handle];
-        frame.data = BBox{x,y,w,h};
-        self.camera_data[frame.camera_index as usize].bbox = BBox{x,y,w,h};
+        frame.data = bounds;
+        self.camera_data[frame.camera_index as usize].bbox = bounds;
         self.changed = match self.changed {
             None => Some(handle),
             Some(u)=> Some(usize::max(u, handle)),
