@@ -7,6 +7,7 @@ pub type Pixelt = i32;
 pub type Ratiot = f32;
 pub type Fractiont = u32;
 
+#[derive(Debug, Clone, Copy)]
 pub enum UserUnits {
     Zero,
     Pixel (Pixelt),
@@ -29,6 +30,11 @@ impl fmt::Debug for VUnit {
         let precision = 2.0f64.powi(-VUnit::PRECISION_BITS);
         let value = precision * self.0 as f64;
         formatter.write_fmt(format_args!("{:.2}", value))
+    }
+}
+impl From<i32> for VUnit {
+    fn from(value: i32) -> Self {
+        VUnit(value)
     }
 }
 

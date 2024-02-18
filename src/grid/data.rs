@@ -1,17 +1,140 @@
-use std::{fmt::Debug, iter, vec};
+use std::{clone, fmt::Debug, iter, marker::PhantomData, vec};
 
 use log::{debug, error, info, warn};
 
-use crate::{frame::{FrameData, FrameRenderer}, units::{Fractiont, UserUnits, VUnit}, BBox, WorldView};
+use crate::{frame::{FrameData, FrameHandle, FrameRenderer}, handle::Handle, units::{Fractiont, UserUnits, VUnit}, BBox, WorldView};
 
-
-pub enum SpacerType<NameT: Debug + Default + Eq> {
-    Unit(UserUnits, NameT),
+#[derive(Clone)]
+pub enum SpacerUnit {
+    Unit(UserUnits),
     Repeat(UserUnits),
 }
 
+const X: usize = 0;
+const Y: usize = 1;
+
+#[derive(Clone, Copy, Default)]
+struct Width {}
+#[derive(Clone, Copy, Default)]
+struct Height {}
+
+pub type XName = Option<Handle<Width>>;
+pub type YName = Option<Handle<Height>>;
+
+trait Dir: Copy + Clone + Default {
+    fn item() -> usize;
+}
+
+impl Dir for Width {
+    fn item() -> usize {
+        X
+    }
+}
+impl Dir for Height {
+    fn item() -> usize {
+        Y
+    }
+}
+
+type GridSpacer = Vec<SpacerUnit>;
+
+pub struct GridBuilder {
+    spacers: [GridSpacer; 2],
+    expands: Option<GridExpandDir>,
+    parent: FrameHandle,
+}
+
+
+
+struct SpacerBuilder<T: Dir> {
+    grid_builder: GridBuilder,
+    spacer: GridSpacer,
+    expands: bool,
+    _dir: PhantomData<T>
+}
+
+impl<T: Dir> SpacerBuilder<T> {
+    fn new(grid_builder: GridBuilder)-> Self {
+        Self {
+            grid_builder,
+            spacer: GridSpacer::new(),
+            expands: false,
+            _dir: PhantomData::<T>
+        }
+    }
+    pub fn add(&mut self, u: &UserUnits) -> &mut Self {
+        self.spacer.push(SpacerUnit::Unit(u.clone()));
+        self
+    }
+    pub fn add_expanding(&mut self, u: &UserUnits) -> &mut Self {
+        if let Some(GridExpandDir::Y) = self.grid_builder.expands {
+            panic!("Grids can only expand in one direction");
+        }
+        self.spacer.push(SpacerUnit::Repeat(u.clone()));
+        self.expands = true;
+        self
+    }
+    pub fn assign<const N: usize>(&self) -> [Option<Handle<T>>; N] {
+        let res = [None; N];
+        for (i, (mut var, _)) in res.into_iter().zip(self.spacer).enumerate() {
+            var = Some(Handle::new(i));
+        }
+        res
+    }
+    pub fn build(mut self) -> GridBuilder {
+        self.grid_builder.spacers[T::item()] = self.spacer;
+        self.grid_builder
+    }
+}
+
+pub type WidthSpacerBuilder = SpacerBuilder<Width>;
+pub type HeightSpacerBuilder = SpacerBuilder<Height>;
+
+
+impl GridBuilder {
+    pub fn new(parent: FrameHandle)-> Self {
+        GridBuilder {
+            spacers: [
+                GridSpacer::new(),
+                GridSpacer::new(),
+            ],
+            expands: None,
+            parent,
+        }
+    }
+    pub fn widths(self) -> WidthSpacerBuilder {
+        WidthSpacerBuilder {
+            grid_builder: self,
+            spacer: GridSpacer::new(),
+            expands: false,
+            _dir: PhantomData,
+        }
+    }
+    pub fn heights(self) -> HeightSpacerBuilder {
+        HeightSpacerBuilder {
+            grid_builder: self,
+            spacer: GridSpacer::new(),
+            expands: false,
+            _dir: PhantomData,
+
+        }
+    }
+    pub fn build(self) -> Grid {
+        Grid::new(
+        self.parent, 
+        self.spacers[X],
+        self.spacers[Y],
+                self.expands,
+            )
+    }
+}
+
+
+
+
+
 fn spacer_after_repeat_count(spacer: &GridSpacer) -> usize {
-    spacer.iter().skip_while(|s| match s {SpacerType::Repeat(_) => false, _ => true}).count()
+    spacer.iter().skip_while(|s| match s {SpacerUnit::Repeat(_) => false, _ => true}).count()
 }
 
 enum SolveUnits {
@@ -41,10 +164,10 @@ struct SpacerSolved {
 fn expand_spacer<'a>(spacer: &'a GridSpacer, pos: VUnit, len: VUnit, repeat_count: usize) -> impl Iterator<Item = SpacerSolved> + 'a {
     let iter_res = spacer.iter().map(move |s| {
         match s {
-            SpacerType::Unit(u, _) => {
+            SpacerUnit::Unit(u) => {
                 iter::repeat(u).take(1)
             }
-            SpacerType::Repeat(u) => {
+            SpacerUnit::Repeat(u) => {
                 iter::repeat(u).take(repeat_count)
             }
         }
@@ -78,32 +201,29 @@ fn expand_spacer<'a>(spacer: &'a GridSpacer, pos: VUnit, len: VUnit, repeat_coun
     iter_res
 }
 
-
-pub type GridSpacer<NameT> = Vec<SpacerType<NameT>>;
-
-pub enum GridRepeatDir {
+pub enum GridExpandDir {
     X,
     Y,
 }
 
 
-pub struct Grid<T: Debug + Default + Eq> {
-    pub handles: Vec<Option<usize>>,
-    pub x_spacer: GridSpacer<T>,
-    pub y_spacer: GridSpacer<T>,
-    pub repeat: Option<GridRepeatDir>,
-    pub parent_frame_handle: usize,
+pub struct Grid {
+    pub handles: Vec<Option<FrameHandle>>,
+    pub x_spacer: GridSpacer,
+    pub y_spacer: GridSpacer,
+    pub expand_dir: GridExpandDir,
+    pub parent_frame_handle: FrameHandle,
     outer_vec: Vec<SpacerSolved>,
     inner_vec: Vec<SpacerSolved>,
 }   
 
-impl<T: Debug + Eq + Default> Grid<T> {
-    pub fn new(parent_frame_handle: usize, x_spacer: GridSpacer<T>, y_spacer: GridSpacer<T>, repeat: Option<GridRepeatDir> ) -> Self {
+impl Grid {
+    pub fn new(parent_frame_handle: FrameHandle, x_spacer: GridSpacer, y_spacer: GridSpacer, expand_dir: Option<GridExpandDir> ) -> Self {
         Self {
             x_spacer,
             y_spacer,
             handles: vec![],
-            repeat,
+            expand_dir: expand_dir.unwrap_or(GridExpandDir::Y),
             outer_vec: vec![],
             inner_vec: vec![],
             parent_frame_handle,
@@ -111,17 +231,15 @@ impl<T: Debug + Eq + Default> Grid<T> {
     }
     
     pub fn update(&mut self, frames: &mut FrameRenderer) {
-        use GridRepeatDir::*;
         const OUT_OFFSET: usize = 1;
         const IN_OFFSET: usize = 0;
         let bounds = {
-            let BBox { x, y, w, h } = frames.get(self.parent_frame_handle).data;
+            let BBox { x, y, w, h } = frames.get(&self.parent_frame_handle).data;
             [x,y,w,h]
         };
-        let (outer, inner, bounds_offset) =  match self.repeat {
-            Some(X) => (&self.x_spacer, &self.y_spacer, IN_OFFSET),
-            Some(Y) => (&self.y_spacer, &self.x_spacer, OUT_OFFSET),
-            None => (&self.y_spacer, &self.x_spacer, OUT_OFFSET),
+        let (outer, inner, bounds_offset) =  match self.expand_dir {
+            GridExpandDir::X => (&self.x_spacer, &self.y_spacer, IN_OFFSET),
+            GridExpandDir::Y => (&self.y_spacer, &self.x_spacer, OUT_OFFSET),
         };
         let (outer_offset, inner_offset) = (bounds_offset, 1-bounds_offset);
         let repeat_count = (self.handles.len() / inner.len()).checked_sub(outer.len() - 1).unwrap_or(0);
@@ -152,10 +270,11 @@ impl<T: Debug + Eq + Default> Grid<T> {
                 len: h,
             } = yvec[y];
             
-            frames.update(*handle, BBox{x,y,w,h});
+            frames.update(handle.index(), BBox{x,y,w,h});
 
         })
-        
+    }
+    pub fn add_frame(&mut self, handle: FrameHandle) {
 
     }
 

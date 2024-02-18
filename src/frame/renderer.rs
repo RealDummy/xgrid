@@ -4,7 +4,7 @@ use bytemuck::{bytes_of, Pod, Zeroable};
 use log::debug;
 use wgpu::{include_wgsl, BufferUsages, Device, MultisampleState, RenderPass, RenderPipeline, RenderPipelineDescriptor, SurfaceConfiguration};
 
-use crate::{BBox, Vertex, WorldView};
+use crate::{handle::Handle, BBox, Vertex, WorldView};
 
 use super::FrameData;
 
@@ -24,6 +24,8 @@ pub struct FrameRenderer {
 pub struct Camera {
     bbox: BBox,
 }
+
+pub type FrameHandle = Handle<FrameData>;
 
 impl FrameRenderer {
     pub fn new(device: &Device, config: &SurfaceConfiguration, world_view_layout: &wgpu::BindGroupLayout) -> Self {
@@ -138,12 +140,12 @@ impl FrameRenderer {
         render_pass.draw(0..4 as u32, 0..self.data.len() as u32);
 
     }
-    pub fn add(&mut self, mut frame: FrameData) -> usize {
+    pub fn add(&mut self, mut frame: FrameData) -> FrameHandle {
         self.camera_data.push(Camera { bbox: frame.data });
         frame.camera_index = (self.camera_data.len() - 1) as u16;
         self.data.push(frame);
         self.changed = Some(self.data.len() - 1);
-        return self.data.len() - 1;
+        return FrameHandle::new(self.data.len() - 1);
     }
     pub fn update(&mut self, handle: usize, bounds: BBox) {
         let frame = &mut self.data[handle];
@@ -154,7 +156,7 @@ impl FrameRenderer {
             Some(u)=> Some(usize::max(u, handle)),
         }
     }
-    pub fn get(&self, handle: usize) -> FrameData {
-        self.data[handle]
+    fn get(&self, handle: &FrameHandle) -> FrameData {
+        self.data[handle.index()]
     }
 }

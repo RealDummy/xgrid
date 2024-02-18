@@ -1,8 +1,8 @@
 mod data;
 mod renderer;
 
-pub use data::{Grid, GridRepeatDir, SpacerType, GridSpacer};
+pub use data::{*};
 
-pub use renderer::GridRenderer;
+pub use renderer::{GridRenderer, GridHandle};
 
 

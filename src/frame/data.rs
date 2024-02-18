@@ -1,6 +1,7 @@
 use std::mem;
 
 use bytemuck::{NoUninit, Pod, Zeroable};
+use wgpu::naga::Handle;
 
 use crate::{units::VUnit, BBox, MarginBox};
 

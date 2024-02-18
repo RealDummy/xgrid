@@ -2,7 +2,7 @@ use std::iter;
 
 use bytemuck::{bytes_of, Pod, Zeroable};
 use frame::FrameRenderer;
-use grid::{Grid, GridRenderer, GridRepeatDir, GridSpacer, SpacerType};
+use grid::{Grid, GridRenderer, SpacerUnit};
 use log::{info, warn};
 use manager::UpdateManager;
 use units::{UserUnits, VUnit};
@@ -18,6 +18,7 @@ mod units;
 mod grid;
 mod frame;
 mod manager;
+mod handle;
 
 
 #[repr(C)]
@@ -261,15 +262,15 @@ impl<'window> State<'window> {
 
         let mut update_manager = UpdateManager::new(&device, &config, &world_view_bind_group_layout, &world_view);
         let gh = update_manager.add_grid(0, vec![
-            SpacerType::Unit(UserUnits::Pixel(100)),
-            SpacerType::Unit(UserUnits::Fraction(1)),
-            SpacerType::Unit(UserUnits::Fraction(1)),
-            SpacerType::Unit(UserUnits::Fraction(1)),
+            SpacerUnit::Unit(UserUnits::Pixel(100)),
+            SpacerUnit::Unit(UserUnits::Fraction(1)),
+            SpacerUnit::Unit(UserUnits::Fraction(1)),
+            SpacerUnit::Unit(UserUnits::Fraction(1)),
 
         ], vec![
-            SpacerType::Unit(UserUnits::Pixel(200)),
-            SpacerType::Unit(UserUnits::Ratio(0.44)),
-            SpacerType::Unit(UserUnits::Fraction(1))
+            SpacerUnit::Unit(UserUnits::Pixel(200)),
+            SpacerUnit::Unit(UserUnits::Ratio(0.44)),
+            SpacerUnit::Unit(UserUnits::Fraction(1))
         ], None);
         
         for i in 0..12 {
