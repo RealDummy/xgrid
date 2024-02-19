@@ -2,7 +2,9 @@ use std::{clone, fmt::Debug, iter, marker::PhantomData, vec};
 
 use log::{debug, error, info, warn};
 
-use crate::{frame::{FrameData, FrameHandle, FrameRenderer}, handle::Handle, units::{Fractiont, UserUnits, VUnit}, BBox, WorldView};
+use crate::{frame::{FrameData, FrameHandle, FrameRenderer}, handle::Handle, manager::UpdateManager, units::{Fractiont, UserUnits, VUnit}, BBox, WorldView};
+
+use super::{GridHandle, GridRenderer};
 
 #[derive(Clone)]
 pub enum SpacerUnit {
@@ -14,9 +16,9 @@ const X: usize = 0;
 const Y: usize = 1;
 
 #[derive(Clone, Copy, Default)]
-struct Width {}
+pub struct Width {}
 #[derive(Clone, Copy, Default)]
-struct Height {}
+pub struct Height {}
 
 pub type XName = Option<Handle<Width>>;
 pub type YName = Option<Handle<Height>>;
@@ -25,12 +27,12 @@ trait Dir: Copy + Clone + Default {
     fn item() -> usize;
 }
 
-impl Dir for Width {
+impl Dir for XName {
     fn item() -> usize {
         X
     }
 }
-impl Dir for Height {
+impl Dir for YName {
     fn item() -> usize {
         Y
     }
@@ -46,27 +48,27 @@ pub struct GridBuilder {
 
 
 
-struct SpacerBuilder<T: Dir> {
-    grid_builder: GridBuilder,
+pub struct SpacerBuilder<'b, T: Dir> {
+    grid_builder: &'b mut GridBuilder,
     spacer: GridSpacer,
     expands: bool,
     _dir: PhantomData<T>
 }
 
-impl<T: Dir> SpacerBuilder<T> {
-    fn new(grid_builder: GridBuilder)-> Self {
+impl<'a,'b, T: Dir> SpacerBuilder<'b, T> {
+    fn new(grid_builder: &'b mut GridBuilder)-> Self {
         Self {
-            grid_builder,
+            grid_builder: grid_builder,
             spacer: GridSpacer::new(),
             expands: false,
             _dir: PhantomData::<T>
         }
     }
-    pub fn add(&mut self, u: &UserUnits) -> &mut Self {
+    pub fn add(mut self, u: UserUnits) -> Self {
         self.spacer.push(SpacerUnit::Unit(u.clone()));
         self
     }
-    pub fn add_expanding(&mut self, u: &UserUnits) -> &mut Self {
+    pub fn add_expanding(mut self, u: UserUnits) -> Self {
         if let Some(GridExpandDir::Y) = self.grid_builder.expands {
             panic!("Grids can only expand in one direction");
         }
@@ -74,21 +76,19 @@ impl<T: Dir> SpacerBuilder<T> {
         self.expands = true;
         self
     }
-    pub fn assign<const N: usize>(&self) -> [Option<Handle<T>>; N] {
-        let res = [None; N];
-        for (i, (mut var, _)) in res.into_iter().zip(self.spacer).enumerate() {
-            var = Some(Handle::new(i));
+    pub fn assign<const N: usize>(self) -> [Option<Handle<T>>; N] {
+        let mut res = [None; N];
+        for (i, (var, _)) in res.iter_mut().zip(self.spacer.iter()).enumerate() {
+            *var = Some(Handle::new(i));
         }
+        self.grid_builder.spacers[T::item()] = self.spacer;
         res
     }
-    pub fn build(mut self) -> GridBuilder {
-        self.grid_builder.spacers[T::item()] = self.spacer;
-        self.grid_builder
-    }
+
 }
 
-pub type WidthSpacerBuilder = SpacerBuilder<Width>;
-pub type HeightSpacerBuilder = SpacerBuilder<Height>;
+pub type WidthSpacerBuilder<'a> = SpacerBuilder<'a, XName>;
+pub type HeightSpacerBuilder<'a> = SpacerBuilder<'a,YName>;
 
 
 impl GridBuilder {
@@ -102,7 +102,7 @@ impl GridBuilder {
             parent,
         }
     }
-    pub fn widths(self) -> WidthSpacerBuilder {
+    pub fn widths(&mut self) -> WidthSpacerBuilder {
         WidthSpacerBuilder {
             grid_builder: self,
             spacer: GridSpacer::new(),
@@ -110,7 +110,7 @@ impl GridBuilder {
             _dir: PhantomData,
         }
     }
-    pub fn heights(self) -> HeightSpacerBuilder {
+    pub fn heights(&mut self) -> HeightSpacerBuilder {
         HeightSpacerBuilder {
             grid_builder: self,
             spacer: GridSpacer::new(),
@@ -119,13 +119,15 @@ impl GridBuilder {
 
         }
     }
-    pub fn build(self) -> Grid {
-        Grid::new(
+    pub fn build(self, manager: &mut UpdateManager) -> GridHandle {
+        let [x_spacer, y_spacer] = self.spacers;
+        manager.add_grid(Grid::new(
         self.parent, 
-        self.spacers[X],
-        self.spacers[Y],
+                x_spacer,
+                y_spacer,
                 self.expands,
             )
+        )
     }
 }
 
@@ -270,7 +272,7 @@ impl Grid {
                 len: h,
             } = yvec[y];
             
-            frames.update(handle.index(), BBox{x,y,w,h});
+            frames.update(handle, BBox{x,y,w,h});
 
         })
     }

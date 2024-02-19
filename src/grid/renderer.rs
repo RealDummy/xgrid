@@ -10,7 +10,10 @@ pub struct GridRenderer {
     data: Vec<Grid>,
 }
 
-pub type GridHandle = Handle<Grid>;
+#[derive(Clone, Copy, Default)]
+pub struct GridT {}
+
+pub type GridHandle = Handle<GridT>;
 
 impl GridRenderer {
     pub fn new(device: &wgpu::Device, config: &wgpu::SurfaceConfiguration, world_view_layout: &wgpu::BindGroupLayout) -> Self {
@@ -24,8 +27,8 @@ impl GridRenderer {
     pub fn render<'rp>(&'rp self, render_pass: &mut wgpu::RenderPass<'rp> ) {
         ()
     }
-    pub fn update(&mut self, grid_handle: usize, bounds: &BBox, frame_renderer: &mut FrameRenderer) {
-        self.data[grid_handle].update(frame_renderer);
+    pub fn update(&mut self, grid_handle: &GridHandle, bounds: &BBox, frame_renderer: &mut FrameRenderer) {
+        self.data[grid_handle.index()].update(frame_renderer);
     }
     pub fn add_frame(&mut self, grid_handle: GridHandle, frame_handle: FrameHandle) {
         self.data[grid_handle.index()].handles.push(Some(frame_handle));

@@ -147,16 +147,16 @@ impl FrameRenderer {
         self.changed = Some(self.data.len() - 1);
         return FrameHandle::new(self.data.len() - 1);
     }
-    pub fn update(&mut self, handle: usize, bounds: BBox) {
-        let frame = &mut self.data[handle];
+    pub fn update(&mut self, handle: &FrameHandle, bounds: BBox) {
+        let frame = &mut self.data[handle.index()];
         frame.data = bounds;
         self.camera_data[frame.camera_index as usize].bbox = bounds;
         self.changed = match self.changed {
-            None => Some(handle),
-            Some(u)=> Some(usize::max(u, handle)),
+            None => Some(handle.index()),
+            Some(u)=> Some(usize::max(u, handle.index())),
         }
     }
-    fn get(&self, handle: &FrameHandle) -> FrameData {
-        self.data[handle.index()]
+    pub fn get<'a>(&'a self, handle: &FrameHandle) -> &'a FrameData {
+        &self.data[handle.index()]
     }
 }

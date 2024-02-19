@@ -261,20 +261,22 @@ impl<'window> State<'window> {
         });
 
         let mut update_manager = UpdateManager::new(&device, &config, &world_view_bind_group_layout, &world_view);
-        let gh = update_manager.add_grid(0, vec![
-            SpacerUnit::Unit(UserUnits::Pixel(100)),
-            SpacerUnit::Unit(UserUnits::Fraction(1)),
-            SpacerUnit::Unit(UserUnits::Fraction(1)),
-            SpacerUnit::Unit(UserUnits::Fraction(1)),
-
-        ], vec![
-            SpacerUnit::Unit(UserUnits::Pixel(200)),
-            SpacerUnit::Unit(UserUnits::Ratio(0.44)),
-            SpacerUnit::Unit(UserUnits::Fraction(1))
-        ], None);
         
+        let mut builder = update_manager.create_grid_in(update_manager.window());
+        let [x1,x2] = builder.widths()
+                .add(UserUnits::Pixel(100))
+                .add(UserUnits::Ratio(0.3))
+                .assign();
+            
+        let [y1, y2] = builder.heights()
+            .add(UserUnits::Pixel(200))
+            .add(UserUnits::Fraction(1))
+            .assign();
+
+        let g = builder.build(&mut update_manager);
+
         for i in 0..12 {
-            update_manager.add_frame(gh);
+            update_manager.add_frame(g);
   
         }
 
