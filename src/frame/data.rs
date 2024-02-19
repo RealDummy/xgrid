@@ -21,14 +21,13 @@ pub enum Border {
     RIGHT,
 }
 
-#[derive(Pod, Clone, Copy, Zeroable)]
+#[derive(Pod, Clone, Copy, Zeroable, Debug)]
 #[repr(C)]
 pub struct FrameData {
     pub data: BBox,
     pub margin: MarginBox,
     pub color: [u8; 4],
-    pub camera_index: u16,
-    pub _pad1: u16,
+    pub camera_index: u32,
 }
 
 impl FrameData {
@@ -44,17 +43,17 @@ impl FrameData {
                 },
                 wgpu::VertexAttribute {
                     format: wgpu::VertexFormat::Sint32x4,
-                    offset: mem::size_of::<[VUnit; 4]>() as u64,
+                    offset: mem::size_of::<BBox>() as u64,
                     shader_location: 2,
                 },
                 wgpu::VertexAttribute {
                     format: wgpu::VertexFormat::Unorm8x4,
-                    offset: mem::size_of::<([VUnit; 4], [VUnit; 4])>() as u64,
+                    offset: mem::size_of::<(BBox, MarginBox)>() as u64,
                     shader_location: 3,
                 },
                 wgpu::VertexAttribute {
                     format: wgpu::VertexFormat::Uint32,
-                    offset: mem::size_of::<([VUnit; 4], [VUnit; 4], [u8; 4])>() as u64,
+                    offset: mem::size_of::<(BBox, MarginBox, [u8; 4])>() as u64,
                     shader_location: 4,
                 }
             ]

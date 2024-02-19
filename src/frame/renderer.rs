@@ -1,14 +1,12 @@
-use std::{mem::{self, size_of}, vec::Vec};
+use std::{mem::size_of, vec::Vec};
 
-use bytemuck::{bytes_of, Pod, Zeroable};
+use bytemuck::{Pod, Zeroable};
 use log::debug;
 use wgpu::{include_wgsl, BufferUsages, Device, MultisampleState, RenderPass, RenderPipeline, RenderPipelineDescriptor, SurfaceConfiguration};
 
-use crate::{handle::Handle, BBox, Vertex, WorldView};
+use crate::{handle::Handle, BBox, Vertex};
 
 use super::FrameData;
-
-use crate::units::VUnit;
 
 pub struct FrameRenderer {
     data: Vec<FrameData>,
@@ -19,7 +17,7 @@ pub struct FrameRenderer {
     camera_buffer_handle: wgpu::Buffer,
     camera_data: Vec<Camera>,
 }
-#[derive(Pod, Zeroable, Clone, Copy)]
+#[derive(Pod, Zeroable, Clone, Copy, Debug)]
 #[repr(C)]
 pub struct Camera {
     bbox: BBox,
@@ -28,7 +26,7 @@ pub struct Camera {
 pub type FrameHandle = Handle<FrameData>;
 
 impl FrameRenderer {
-    pub fn new(device: &Device, config: &SurfaceConfiguration, world_view_layout: &wgpu::BindGroupLayout) -> Self {
+    pub fn new(device: &Device, config: &SurfaceConfiguration) -> Self {
         let shader = include_wgsl!("shader.wgsl");
         let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("frame shader"),
@@ -68,7 +66,6 @@ impl FrameRenderer {
         let pipeline_layout_descriptor = wgpu::PipelineLayoutDescriptor {
             label: Some("frame pipeline layout"),
             bind_group_layouts: &[
-                world_view_layout,
                 &camera_bg_layout,
             ],
             push_constant_ranges: &[],
@@ -132,17 +129,17 @@ impl FrameRenderer {
         
     }
     pub fn render<'rp>(&'rp self, render_pass: &mut RenderPass<'rp> ) {
-        debug!("FRAME RENDER: {} frames", self.camera_data.len());
-        debug!("CAMERA: {:?}", self.camera_data[0].bbox);
+        //debug!("FRAME RENDER: {} frames", self.camera_data.len());
+        //debug!("CAMERA: {:?}", self.camera_data[0].bbox);
         render_pass.set_pipeline(&self.pipeline);
         render_pass.set_vertex_buffer(1, self.frame_buffer_handle.slice(..));
-        render_pass.set_bind_group(1, &self.camera_bg_handle, &[]);
+        render_pass.set_bind_group(0, &self.camera_bg_handle, &[]);
         render_pass.draw(0..4 as u32, 0..self.data.len() as u32);
 
     }
     pub fn add(&mut self, mut frame: FrameData) -> FrameHandle {
         self.camera_data.push(Camera { bbox: frame.data });
-        frame.camera_index = (self.camera_data.len() - 1) as u16;
+        frame.camera_index = (self.camera_data.len() - 1) as u32;
         self.data.push(frame);
         self.changed = Some(self.data.len() - 1);
         return FrameHandle::new(self.data.len() - 1);

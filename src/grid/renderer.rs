@@ -16,7 +16,7 @@ pub struct GridT {}
 pub type GridHandle = Handle<GridT>;
 
 impl GridRenderer {
-    pub fn new(device: &wgpu::Device, config: &wgpu::SurfaceConfiguration, world_view_layout: &wgpu::BindGroupLayout) -> Self {
+    pub fn new(device: &wgpu::Device, config: &wgpu::SurfaceConfiguration) -> Self {
         Self {
             data: vec![],
         }
@@ -31,7 +31,7 @@ impl GridRenderer {
         self.data[grid_handle.index()].update(frame_renderer);
     }
     pub fn add_frame(&mut self, grid_handle: GridHandle, frame_handle: FrameHandle) {
-        self.data[grid_handle.index()].handles.push(Some(frame_handle));
+        self.data[grid_handle.index()].add_frame(frame_handle);
     }
     pub fn add(&mut self, g: Grid) -> GridHandle {
         self.data.push(g);

@@ -255,6 +255,7 @@ impl Grid {
             OUT_OFFSET => (&self.inner_vec,&self.outer_vec),
             IN_OFFSET | _ => (&self.outer_vec,&self.inner_vec), 
         };
+        debug!("{:?}", self.handles.len());
         self.handles.iter().enumerate().for_each(|(i, h)|{
             let Some(handle) = h else {
                 return;
@@ -271,13 +272,13 @@ impl Grid {
                 pos: y,
                 len: h,
             } = yvec[y];
-            
+            debug!("{:?}", BBox{x,y,w,h});
             frames.update(handle, BBox{x,y,w,h});
 
         })
     }
     pub fn add_frame(&mut self, handle: FrameHandle) {
-
+        self.handles.push(Some(handle))
     }
 
 } 

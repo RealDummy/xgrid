@@ -74,12 +74,7 @@ const VERTICES: &[Vertex] = &[
     }, // D
 ];
 
-#[derive(Pod, Zeroable, Clone, Copy)]
-#[repr(C)]
-pub struct WorldView {
-    w: VUnit,
-    h: VUnit,
-}
+pub type  WorldView = BBox;
 
 #[derive(Pod, Zeroable, Clone, Copy, Debug)]
 #[repr(C)]
@@ -110,7 +105,7 @@ impl<T: Into<VUnit>> Into<BBox> for Rect<T> {
     }
 }
 
-#[derive(Pod, Zeroable, Clone, Copy)]
+#[derive(Pod, Zeroable, Clone, Copy, Debug)]
 #[repr(C)]
 pub struct MarginBox {
     pub top: VUnit,
@@ -225,32 +220,13 @@ impl<'window> State<'window> {
             usage: wgpu::BufferUsages::VERTEX,
         });
         let world_view = WorldView {
+            x: 0.into(),
+            y: 0.into(),
             w: VUnit::new(size.width as i32),
             h: VUnit::new(size.height as i32),
         };
-        let world_view_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor{
-            label: Some("world view"),
-            contents: bytes_of(&world_view),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
-        let world_view_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("World view bg layout"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                    ty: wgpu::BindingType::Buffer { 
-                        ty: wgpu::BufferBindingType::Uniform, 
-                        has_dynamic_offset: false, 
-                        min_binding_size: None 
-                    },
-                    count: None,
-                }
-            ],
-        });
 
-
-        let mut update_manager = UpdateManager::new(&device, &config, &world_view_bind_group_layout, &world_view);
+        let mut update_manager = UpdateManager::new(&device, &config, &world_view);
         
         let mut builder = update_manager.create_grid_in(update_manager.window());
         let [x1,x2] = builder.widths()
@@ -266,7 +242,7 @@ impl<'window> State<'window> {
         let g = builder.build(&mut update_manager);
 
         for i in 0..12 {
-            update_manager.add_frame(g);
+            let _f = update_manager.add_frame(g);
   
         }
 
@@ -293,9 +269,14 @@ impl<'window> State<'window> {
             self.config.height = new_size.height;
             self.surface.configure(&self.device, &self.config);
 
-            self.queue.write_buffer(&self.world_view_buffer, 0, bytes_of(&self.world_view));
+            let cam = Rect {
+                x: 0,
+                y: 0,
+                w: new_size.width as i32, 
+                h: new_size.height as i32,
+            }.into();
 
-            self.update_manager.update_world(&self.world_view);
+            self.update_manager.update_world(&cam);
         }
     }
 
@@ -342,11 +323,9 @@ impl<'window> State<'window> {
                 occlusion_query_set: None,
                 timestamp_writes: None,
             });
-            render_pass.set_bind_group(0, &self.world_view_bind_group, &[]);
             render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
             self.update_manager.render(&mut render_pass);
         }
-
         self.queue.submit(iter::once(encoder.finish()));
         output.present();
 
@@ -428,6 +407,7 @@ pub async fn run() {
                                 // We're ignoring timeouts
                                 Err(wgpu::SurfaceError::Timeout) => log::warn!("Surface timeout"),
                             }
+                            state.window().request_redraw();
                         }
                         _ => {}
                     }
@@ -435,6 +415,7 @@ pub async fn run() {
             }
             _ => {}
         }
+        
     });
     if let Err(e) = exit_status {
         warn!("{e}")

@@ -21,21 +21,19 @@ impl  UpdateManager {
     pub fn new(
         device: &wgpu::Device, 
         config: &wgpu::SurfaceConfiguration, 
-        world_view_layout: &wgpu::BindGroupLayout,
         world: &WorldView,
     ) -> Self {
-        let mut frame_renderer = FrameRenderer::new(device, config, world_view_layout);
+        let mut frame_renderer = FrameRenderer::new(device, config);
         let window_handle =frame_renderer.add(FrameData {
             data: BBox {x: 0.into(), y: 0.into(), w: world.w, h: world.h},
             margin: MarginBox::zeroed(),
-            color: [255; 4],
+            color: [255, 255, 255, 30],
             camera_index: 0,
-            _pad1: 0
         });
         Self {
-            grid_renderer: GridRenderer::new(device, config, world_view_layout),
+            grid_renderer: GridRenderer::new(device, config),
             frame_renderer,
-            frame_to_grid_handle_map: vec![],
+            frame_to_grid_handle_map: vec![None],
             window_handle,
         }
     }
@@ -43,7 +41,7 @@ impl  UpdateManager {
         self.window_handle
     }
     pub fn update_world(&mut self, world: &WorldView) {
-        self.update(&FrameHandle::new(0), &UpdateMessage::Size(BBox {x: 0.into(),y: 0.into(),w: world.w, h: world.h}));
+        self.update(&self.window(), &UpdateMessage::Size(*world));
     }
     pub fn update(&mut self, frame_handle: &FrameHandle, message: &UpdateMessage) {
         match message {
@@ -65,8 +63,7 @@ impl  UpdateManager {
             data: BBox::zeroed(),
             margin: Borders {top: 25, bottom: 25, left: 25, right: 25}.into(),
             color: [255,255,255,25 ],
-            camera_index: (self.frame_to_grid_handle_map.len() - 1) as u16,
-            _pad1: 0,
+            camera_index: (self.frame_to_grid_handle_map.len() - 1) as u32,
         });
         self.grid_renderer.add_frame(grid_handle, fh);
         return fh;
@@ -77,7 +74,10 @@ impl  UpdateManager {
         GridBuilder::new(parent_frame)
     }
     pub fn add_grid(&mut self, grid: Grid) -> GridHandle {
-        self.grid_renderer.add(grid)
+        let parent = grid.parent_frame_handle.index();
+        let handle = self.grid_renderer.add(grid);
+        self.frame_to_grid_handle_map[parent] = Some(handle);
+        return handle;
     }
     pub fn render<'a>(&'a self,render_pass: &mut wgpu::RenderPass<'a>) {
         self.frame_renderer.render(render_pass);

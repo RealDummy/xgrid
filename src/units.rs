@@ -93,7 +93,7 @@ impl Div for VUnit {
 }
 impl fmt::Debug for VUnit {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> { 
-        let precision = 2.0f64.powi(-VUnit::PRECISION_BITS);
+        let precision = 2.0f64.powi(-VUnit::PRECISION_BITS - 1);
         let value = precision * self.0 as f64;
         formatter.write_fmt(format_args!("{:.2}", value))
     }
