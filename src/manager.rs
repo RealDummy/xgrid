@@ -2,7 +2,7 @@ use bytemuck::Zeroable;
 use log::debug;
 
 
-use crate::{frame::{FrameData, FrameHandle}, grid::{Grid, GridBuilder, GridHandle}, units::VUnit, BBox, FrameRenderer, GridRenderer, MarginBox, WorldView};
+use crate::{frame::{FrameData, FrameHandle}, grid::{Grid, GridBuilder, GridHandle}, units::VUnit, BBox, Borders, FrameRenderer, GridRenderer, MarginBox, Rect, WorldView};
 pub struct UpdateManager {
     grid_renderer: GridRenderer,
     frame_renderer: FrameRenderer,
@@ -43,7 +43,7 @@ impl  UpdateManager {
         self.window_handle
     }
     pub fn update_world(&mut self, world: &WorldView) {
-        self.update(&FrameHandle::new(0), &UpdateMessage::Size(BBox{x: VUnit(0),y: VUnit(0),w: world.w, h: world.h}));
+        self.update(&FrameHandle::new(0), &UpdateMessage::Size(BBox {x: 0.into(),y: 0.into(),w: world.w, h: world.h}));
     }
     pub fn update(&mut self, frame_handle: &FrameHandle, message: &UpdateMessage) {
         match message {
@@ -63,7 +63,7 @@ impl  UpdateManager {
         self.frame_to_grid_handle_map.push(None);
         let fh = self.frame_renderer.add(FrameData {
             data: BBox::zeroed(),
-            margin: MarginBox {top: VUnit(25), bottom: VUnit(25), left: VUnit(25), right: VUnit(25)},
+            margin: Borders {top: 25, bottom: 25, left: 25, right: 25}.into(),
             color: [255,255,255,25 ],
             camera_index: (self.frame_to_grid_handle_map.len() - 1) as u16,
             _pad1: 0,

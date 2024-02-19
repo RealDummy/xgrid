@@ -84,11 +84,32 @@ pub struct WorldView {
 #[derive(Pod, Zeroable, Clone, Copy, Debug)]
 #[repr(C)]
 pub struct BBox {
-    pub x: VUnit,
-    pub y: VUnit,
-    pub w: VUnit,
-    pub h: VUnit,
+    x: VUnit,
+    y: VUnit,
+    w: VUnit,
+    h: VUnit,
 }
+
+pub struct Rect<T: Into<VUnit>> {
+    x: T,
+    y: T,
+    w: T,
+    h: T,
+}
+impl<T: Into<VUnit>> Into<BBox> for Rect<T> {
+    fn into(self) -> BBox {
+        let Self {
+            x,y,w,h
+        } = self;
+        BBox {
+            x: x.into(),
+            y: y.into(),
+            w: w.into(),
+            h: h.into(),
+        }
+    }
+}
+
 #[derive(Pod, Zeroable, Clone, Copy)]
 #[repr(C)]
 pub struct MarginBox {
@@ -98,6 +119,25 @@ pub struct MarginBox {
     pub right: VUnit,
 }
 
+pub struct Borders<T: Into<VUnit>> {
+    pub top: T,
+    pub bottom: T,
+    pub left: T,
+    pub right: T,
+}
+impl<T: Into<VUnit>> Into<MarginBox> for Borders<T> {
+    fn into(self) -> MarginBox {
+        let Self {
+            top,bottom,left,right
+        } = self;
+        MarginBox {
+            top: top.into(),
+            bottom: bottom.into(),
+            left: left.into(),
+            right: right.into(),
+        }
+    }
+}
 
 struct State<'a> {
     device: wgpu::Device,
@@ -108,9 +148,6 @@ struct State<'a> {
     config: wgpu::SurfaceConfiguration,
     size: PhysicalSize<f64>,
     update_manager: UpdateManager,
-    world_view: WorldView,
-    world_view_buffer: wgpu::Buffer,
-    world_view_bind_group: wgpu::BindGroup,
 }
 
 
@@ -188,8 +225,8 @@ impl<'window> State<'window> {
             usage: wgpu::BufferUsages::VERTEX,
         });
         let world_view = WorldView {
-            w: VUnit(size.width as i32), 
-            h: VUnit(size.height as i32),
+            w: VUnit::new(size.width as i32),
+            h: VUnit::new(size.height as i32),
         };
         let world_view_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor{
             label: Some("world view"),
@@ -211,54 +248,7 @@ impl<'window> State<'window> {
                 }
             ],
         });
-        let world_view_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &world_view_bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: world_view_buffer.as_entire_binding(),
-                }
-            ],
-            label: Some("camera_bind_group"),
-        });
-        
 
-        let camera = BBox {
-            x: VUnit(0 as i32), 
-            y: VUnit(0 as i32),
-            w: VUnit(size.width as i32), 
-            h: VUnit(size.height as i32),
-        };
-        let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor{
-            label: Some("world view"),
-            contents: bytes_of(&camera),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
-        let camera_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("World view bg layout"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                    ty: wgpu::BindingType::Buffer { 
-                        ty: wgpu::BufferBindingType::Uniform, 
-                        has_dynamic_offset: false, 
-                        min_binding_size: None 
-                    },
-                    count: None,
-                }
-            ],
-        });
-        let camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &camera_bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: world_view_buffer.as_entire_binding(),
-                }
-            ],
-            label: Some("camera_bind_group"),
-        });
 
         let mut update_manager = UpdateManager::new(&device, &config, &world_view_bind_group_layout, &world_view);
         
@@ -289,9 +279,6 @@ impl<'window> State<'window> {
             vertex_buffer,
             window,
             update_manager,
-            world_view,
-            world_view_buffer,
-            world_view_bind_group,
         }
     }
 
@@ -305,9 +292,6 @@ impl<'window> State<'window> {
             self.config.width = new_size.width;
             self.config.height = new_size.height;
             self.surface.configure(&self.device, &self.config);
-
-            self.world_view.w = VUnit(new_size.width as i32);
-            self.world_view.h = VUnit(new_size.height as i32);
 
             self.queue.write_buffer(&self.world_view_buffer, 0, bytes_of(&self.world_view));
 

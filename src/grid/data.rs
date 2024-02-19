@@ -144,17 +144,17 @@ enum SolveUnits {
     Fraction(Fractiont),
 }
 
-fn units_solve(u: &UserUnits, pos: VUnit, len: VUnit) -> SolveUnits {
+fn units_solve(u: UserUnits, pos: VUnit, len: VUnit) -> SolveUnits {
     use SolveUnits::*;
     match u {
         UserUnits::Pixel(p) => {
-            Exact(VUnit((*p).into()))
+            Exact(p.into())
         },
         UserUnits::Ratio(f) => {
-            Exact(VUnit((len.0 as f32 * f).round() as i32))
+            Exact(((len.pix() * f).round() as i32).into())
         }
-        UserUnits::Zero => Exact(VUnit(0)),
-        UserUnits::Fraction(f) => Fraction(*f),
+        UserUnits::Zero => Exact(0.into()),
+        UserUnits::Fraction(f) => Fraction(f),
     }
 }
 
@@ -173,28 +173,28 @@ fn expand_spacer<'a>(spacer: &'a GridSpacer, pos: VUnit, len: VUnit, repeat_coun
                 iter::repeat(u).take(repeat_count)
             }
         }
-    }).flatten().map(move |u| units_solve(u, pos, len));
-    let (total_f, taken_u) = iter_res.clone().fold((0,0),|(a, rest), u| {
+    }).flatten().map(move |&u| units_solve(u, pos, len));
+    let (total_f, taken_u) = iter_res.clone().fold((0, 0.into()),|(a, rest), u| {
         match u {
             SolveUnits::Fraction(f) => (a + f, rest),
-            SolveUnits::Exact(v) => (a, rest + v.0),
+            SolveUnits::Exact(v) => (a, rest + v),
         }
     });
-    let units_remaining = len.0 - taken_u;
-    let mut curr_pos = 0;
+    let units_remaining = len - taken_u;
+    let mut curr_pos = 0.into();
     let iter_res = iter_res.map(move |u| {
         SpacerSolved {
-            pos: VUnit(curr_pos),
+            pos: curr_pos,
             len: match u {
                 SolveUnits::Exact(u) => {
-                    curr_pos += u.0;
+                    curr_pos += u;
                     u
                 }
                 SolveUnits::Fraction(f) => {
                     let u = {
-                        VUnit(((f as f32 / total_f as f32) * units_remaining as f32).round() as i32)
+                        ((f as i32) * units_remaining) / (total_f as i32)
                     };
-                    curr_pos += u.0;
+                    curr_pos += u;
                     u
                 }
             }
