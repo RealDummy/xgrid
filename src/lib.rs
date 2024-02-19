@@ -2,7 +2,7 @@ use std::iter;
 
 use bytemuck::{bytes_of, Pod, Zeroable};
 use frame::FrameRenderer;
-use grid::{Grid, GridRenderer, SpacerUnit};
+use grid::{GridRenderer, SpacerUnit};
 use log::{info, warn, debug};
 use manager::UpdateManager;
 use units::{UserUnits, VUnit};
@@ -229,7 +229,7 @@ impl<'window> State<'window> {
         let mut update_manager = UpdateManager::new(&device, &config, &world_view);
         
         let mut builder = update_manager.create_grid_in(update_manager.window());
-        let [x1,x2] = builder.widths()
+        let [x1,x2, xn] = builder.widths()
                 .add(UserUnits::Pixel(100))
                 .add(UserUnits::Fraction(1))
                 .add_expanding(UserUnits::Pixel(100))
@@ -243,7 +243,7 @@ impl<'window> State<'window> {
         let g = builder.build(&mut update_manager);
 
         for i in 0..12 {
-            let _f = update_manager.add_frame(&g);
+            let _f = update_manager.add_frame(g, xn,y1);
         }
 
         Self {

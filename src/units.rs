@@ -35,6 +35,28 @@ impl VUnit {
     }
 }
 
+impl PartialEq for VUnit {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
+    fn ne(&self, other: &Self) -> bool {
+        self.0 != other.0
+    }
+}
+impl Eq for VUnit {}
+
+impl PartialOrd for VUnit {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(i32::cmp(&self.0, &other.0))
+    }
+}
+
+impl Ord for VUnit {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        i32::cmp(&self.0, &other.0)
+    }
+}
+
 impl From<i32> for VUnit {
     fn from(value: i32) -> Self {
         VUnit(value << Self::PRECISION_BITS)

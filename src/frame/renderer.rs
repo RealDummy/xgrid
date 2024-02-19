@@ -4,7 +4,7 @@ use bytemuck::{Pod, Zeroable};
 use log::{debug, warn};
 use wgpu::{include_wgsl, BufferUsages, Device, MultisampleState, RenderPass, RenderPipeline, RenderPipelineDescriptor, SurfaceConfiguration};
 
-use crate::{handle::Handle, units::VUnit, BBox, Vertex};
+use crate::{handle::{Handle, HandleLike}, units::VUnit, BBox, Vertex};
 
 use super::FrameData;
 
@@ -142,7 +142,7 @@ impl FrameRenderer {
         self.changed = Some(self.data.len() - 1);
         return FrameHandle::new(self.data.len() - 1);
     }
-    pub fn update(&mut self, handle: &FrameHandle, bounds: &BBox) {
+    pub fn update(&mut self, handle: FrameHandle, bounds: &BBox) {
         let frame = &mut self.data[handle.index()];
         frame.data = *bounds;
         self.camera_data[handle.index()].bbox = *bounds;
@@ -151,7 +151,7 @@ impl FrameRenderer {
             Some(u)=> Some(usize::max(u, handle.index())),
         }
     }
-    pub fn get<'a>(&'a self, handle: &FrameHandle) -> &'a FrameData {
+    pub fn get<'a>(&'a self, handle: FrameHandle) -> &'a FrameData {
         &self.data[handle.index()]
     }
 }

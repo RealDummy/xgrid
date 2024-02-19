@@ -22,12 +22,20 @@ struct CameraArray {
 @group(0) @binding(0) 
 var<storage, read> camera_array: array<CameraArray>;
 
+
+/// expects box to be xywh and margin [top, bottom, right, left]
+fn calculate_margin(box: vec4<i32>, margin: vec4<i32>) -> vec4<i32> {
+    var res = box - vec4<i32>(-margin.z, -margin.x, margin.z + margin.w, margin.x + margin.y);
+    res = max(res, vec4<i32>(0));
+    return res;
+}
+
 @vertex
 fn vs_main(
     v: VertexInput
 ) -> VertexOutput {
     var out: VertexOutput;
-    let xywh = v.vertex_xywh - vec4<i32>(-v.margin.z, -v.margin.x, v.margin.z + v.margin.w, v.margin.x + v.margin.y);
+    let xywh = calculate_margin(v.vertex_xywh, v.margin);
     let abs_pos = vec2<f32>(xywh.xy);
     let abs_dim = vec2<f32>(xywh.zw);
     let cam = vec4<f32>(camera_array[v.camera_index].xywh);
