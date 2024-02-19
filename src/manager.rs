@@ -46,7 +46,7 @@ impl  UpdateManager {
     pub fn update(&mut self, frame_handle: &FrameHandle, message: &UpdateMessage) {
         match message {
             UpdateMessage::Size(bounds) => {
-                self.frame_renderer.update(frame_handle, *bounds);
+                self.frame_renderer.update(frame_handle, bounds);
                 if let Some(Some(grid_handle)) = self.frame_to_grid_handle_map.get(frame_handle.index()) {
                     self.grid_renderer.update(grid_handle, bounds, &mut self.frame_renderer);
                 }
@@ -57,20 +57,20 @@ impl  UpdateManager {
         self.frame_renderer.prepare(queue);
         self.grid_renderer.prepare(queue);
     }
-    pub fn add_frame(&mut self, grid_handle: GridHandle) -> FrameHandle {
+    pub fn add_frame(&mut self, grid_handle: &GridHandle) -> FrameHandle {
         self.frame_to_grid_handle_map.push(None);
         let fh = self.frame_renderer.add(FrameData {
             data: BBox::zeroed(),
-            margin: Borders {top: 25, bottom: 25, left: 25, right: 25}.into(),
+            margin: Borders {top: 10, bottom: 10, left: 10, right: 10}.into(),
             color: [255,255,255,25 ],
-            camera_index: (self.frame_to_grid_handle_map.len() - 1) as u32,
+            camera_index: self.grid_renderer.get_parent_handle(grid_handle).index() as u32,
         });
         self.grid_renderer.add_frame(grid_handle, fh);
         return fh;
     }
     pub fn create_grid_in(&mut self, 
         parent_frame: FrameHandle, 
-    ) -> GridBuilder {
+    ) -> GridBuilder<false, false> {
         GridBuilder::new(parent_frame)
     }
     pub fn add_grid(&mut self, grid: Grid) -> GridHandle {

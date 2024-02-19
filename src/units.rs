@@ -24,16 +24,14 @@ pub struct VUnit(i32);
 impl VUnit {
     const PRECISION_BITS: i32 = 6;
     pub fn pix(&self) -> f32 {
-        let full_pix = (self.0 / (1<< Self::PRECISION_BITS )) as f32;
-        let sub_pix = (self.0 % (1<< Self::PRECISION_BITS )) as f32;
+        let full_pix = (self.0 >> Self::PRECISION_BITS ) as f32;
+        let sub_pix = (self.0 % (1 << Self::PRECISION_BITS )) as f32 / 2.0f32.powi(Self::PRECISION_BITS);
 
         return full_pix + sub_pix;
 
     }
     pub fn new(p: i32) -> VUnit {
-        Self (
-            p.into()
-        )
+        p.into()
     }
 }
 
@@ -69,6 +67,7 @@ impl Mul<i32> for VUnit {
         VUnit(self.0 * rhs)
     }
 }
+
 impl Mul<VUnit> for i32 {
     type Output = VUnit;
     fn mul(self, rhs: VUnit) -> Self::Output {
@@ -93,9 +92,7 @@ impl Div for VUnit {
 }
 impl fmt::Debug for VUnit {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> { 
-        let precision = 2.0f64.powi(-VUnit::PRECISION_BITS - 1);
-        let value = precision * self.0 as f64;
-        formatter.write_fmt(format_args!("{:.2}", value))
+        formatter.write_fmt(format_args!("{:.2}", self.pix()))
     }
 }
 

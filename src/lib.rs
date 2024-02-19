@@ -3,7 +3,7 @@ use std::iter;
 use bytemuck::{bytes_of, Pod, Zeroable};
 use frame::FrameRenderer;
 use grid::{Grid, GridRenderer, SpacerUnit};
-use log::{info, warn};
+use log::{info, warn, debug};
 use manager::UpdateManager;
 use units::{UserUnits, VUnit};
 use wgpu::{util::DeviceExt, BufferSlice, PresentMode};
@@ -231,19 +231,19 @@ impl<'window> State<'window> {
         let mut builder = update_manager.create_grid_in(update_manager.window());
         let [x1,x2] = builder.widths()
                 .add(UserUnits::Pixel(100))
-                .add(UserUnits::Ratio(0.3))
+                .add(UserUnits::Fraction(1))
+                .add_expanding(UserUnits::Pixel(100))
                 .assign();
             
         let [y1, y2] = builder.heights()
-            .add(UserUnits::Pixel(200))
             .add(UserUnits::Fraction(1))
+            .add(UserUnits::Pixel(400))
             .assign();
 
         let g = builder.build(&mut update_manager);
 
         for i in 0..12 {
-            let _f = update_manager.add_frame(g);
-  
+            let _f = update_manager.add_frame(&g);
         }
 
         Self {

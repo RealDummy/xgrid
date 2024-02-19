@@ -1,10 +1,10 @@
 use std::{mem::size_of, vec::Vec};
 
 use bytemuck::{Pod, Zeroable};
-use log::debug;
+use log::{debug, warn};
 use wgpu::{include_wgsl, BufferUsages, Device, MultisampleState, RenderPass, RenderPipeline, RenderPipelineDescriptor, SurfaceConfiguration};
 
-use crate::{handle::Handle, BBox, Vertex};
+use crate::{handle::Handle, units::VUnit, BBox, Vertex};
 
 use super::FrameData;
 
@@ -129,25 +129,23 @@ impl FrameRenderer {
         
     }
     pub fn render<'rp>(&'rp self, render_pass: &mut RenderPass<'rp> ) {
-        //debug!("FRAME RENDER: {} frames", self.camera_data.len());
-        //debug!("CAMERA: {:?}", self.camera_data[0].bbox);
+        //debug!("cam: {:?}", self.camera_data[0]);
         render_pass.set_pipeline(&self.pipeline);
         render_pass.set_vertex_buffer(1, self.frame_buffer_handle.slice(..));
         render_pass.set_bind_group(0, &self.camera_bg_handle, &[]);
         render_pass.draw(0..4 as u32, 0..self.data.len() as u32);
 
     }
-    pub fn add(&mut self, mut frame: FrameData) -> FrameHandle {
+    pub fn add(&mut self, frame: FrameData) -> FrameHandle {
         self.camera_data.push(Camera { bbox: frame.data });
-        frame.camera_index = (self.camera_data.len() - 1) as u32;
         self.data.push(frame);
         self.changed = Some(self.data.len() - 1);
         return FrameHandle::new(self.data.len() - 1);
     }
-    pub fn update(&mut self, handle: &FrameHandle, bounds: BBox) {
+    pub fn update(&mut self, handle: &FrameHandle, bounds: &BBox) {
         let frame = &mut self.data[handle.index()];
-        frame.data = bounds;
-        self.camera_data[frame.camera_index as usize].bbox = bounds;
+        frame.data = *bounds;
+        self.camera_data[handle.index()].bbox = *bounds;
         self.changed = match self.changed {
             None => Some(handle.index()),
             Some(u)=> Some(usize::max(u, handle.index())),

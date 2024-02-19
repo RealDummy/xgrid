@@ -23,24 +23,24 @@ pub struct Height {}
 pub type XName = Option<Handle<Width>>;
 pub type YName = Option<Handle<Height>>;
 
-trait Dir: Copy + Clone + Default {
-    fn item() -> usize;
+pub trait Dir: Copy + Clone + Default {
+    fn item() -> GridExpandDir;
 }
 
 impl Dir for XName {
-    fn item() -> usize {
-        X
+    fn item() -> GridExpandDir {
+        GridExpandDir::X
     }
 }
 impl Dir for YName {
-    fn item() -> usize {
-        Y
+    fn item() -> GridExpandDir {
+        GridExpandDir::Y
     }
 }
 
 type GridSpacer = Vec<SpacerUnit>;
 
-pub struct GridBuilder {
+pub struct GridBuilder<const XEXPANDS: bool, const YEXPANDS: bool> {
     spacers: [GridSpacer; 2],
     expands: Option<GridExpandDir>,
     parent: FrameHandle,
@@ -48,52 +48,61 @@ pub struct GridBuilder {
 
 
 
-pub struct SpacerBuilder<'b, T: Dir> {
-    grid_builder: &'b mut GridBuilder,
+pub struct SpacerBuilder<'b, const XEXPANDS: bool, const YEXPANDS: bool, T: Dir> {
+    grid_builder: &'b mut GridBuilder<XEXPANDS, YEXPANDS>,
     spacer: GridSpacer,
-    expands: bool,
-    _dir: PhantomData<T>
+    _dir: PhantomData<T>,
 }
 
-impl<'a,'b, T: Dir> SpacerBuilder<'b, T> {
-    fn new(grid_builder: &'b mut GridBuilder)-> Self {
+impl<'b, const XEXPANDS: bool,const YEXPANDS: bool, T: Dir> SpacerBuilder<'b, XEXPANDS, YEXPANDS, T> {
+    fn new(grid_builder: &'b mut GridBuilder<XEXPANDS, YEXPANDS>)-> Self {
         Self {
             grid_builder: grid_builder,
             spacer: GridSpacer::new(),
-            expands: false,
-            _dir: PhantomData::<T>
+            _dir: PhantomData,
         }
     }
     pub fn add(mut self, u: UserUnits) -> Self {
         self.spacer.push(SpacerUnit::Unit(u.clone()));
         self
     }
-    pub fn add_expanding(mut self, u: UserUnits) -> Self {
-        if let Some(GridExpandDir::Y) = self.grid_builder.expands {
-            panic!("Grids can only expand in one direction");
-        }
-        self.spacer.push(SpacerUnit::Repeat(u.clone()));
-        self.expands = true;
-        self
-    }
+
     pub fn assign<const N: usize>(self) -> [Option<Handle<T>>; N] {
         let mut res = [None; N];
         for (i, (var, _)) in res.iter_mut().zip(self.spacer.iter()).enumerate() {
             *var = Some(Handle::new(i));
         }
-        self.grid_builder.spacers[T::item()] = self.spacer;
+        self.grid_builder.spacers[match T::item() {GridExpandDir::X => 0, _=>1}] = self.spacer;
+        self.grid_builder.expands = Some(T::item());
         res
     }
-
 }
 
-pub type WidthSpacerBuilder<'a> = SpacerBuilder<'a, XName>;
-pub type HeightSpacerBuilder<'a> = SpacerBuilder<'a,YName>;
+impl<'b> SpacerBuilder<'b, false, false, XName> {
+    pub fn add_expanding(mut self, u: UserUnits) -> SpacerBuilder<'b, true, false, XName> {
+        self.spacer.push(SpacerUnit::Repeat(u.clone()));
+        self
+    }
+}
+
+impl<'b> SpacerBuilder<'b, false, false, YName> {
+    pub fn add_expanding(mut self, u: UserUnits) -> SpacerBuilder<'b, false, true, YName> {
+        self.spacer.push(SpacerUnit::Repeat(u.clone()));
+        SpacerBuilder { 
+            grid_builder: self.grid_builder,
+            spacer: self.spacer,
+            _dir, PhantomData
+        }
+    }
+}
+
+pub type WidthSpacerBuilder<'a, const XEXPANDS: bool, const YEXPANDS:bool> = SpacerBuilder<'a, XEXPANDS, YEXPANDS, XName>;
+pub type HeightSpacerBuilder<'a, const XEXPANDS: bool, const YEXPANDS:bool> = SpacerBuilder<'a, XEXPANDS, YEXPANDS, YName>;
 
 
-impl GridBuilder {
-    pub fn new(parent: FrameHandle)-> Self {
-        GridBuilder {
+impl<const XEXPANDS: bool, const YEXPANDS: bool> GridBuilder<XEXPANDS, YEXPANDS> {
+    pub fn new(parent: FrameHandle)-> GridBuilder<false, false> {
+        GridBuilder::<false, false> {
             spacers: [
                 GridSpacer::new(),
                 GridSpacer::new(),
@@ -102,22 +111,11 @@ impl GridBuilder {
             parent,
         }
     }
-    pub fn widths(&mut self) -> WidthSpacerBuilder {
-        WidthSpacerBuilder {
-            grid_builder: self,
-            spacer: GridSpacer::new(),
-            expands: false,
-            _dir: PhantomData,
-        }
+    pub fn widths(&mut self) -> WidthSpacerBuilder<XEXPANDS, YEXPANDS> {
+        WidthSpacerBuilder::new(self)
     }
-    pub fn heights(&mut self) -> HeightSpacerBuilder {
-        HeightSpacerBuilder {
-            grid_builder: self,
-            spacer: GridSpacer::new(),
-            expands: false,
-            _dir: PhantomData,
-
-        }
+    pub fn heights(&mut self) -> HeightSpacerBuilder<XEXPANDS, YEXPANDS> {
+        HeightSpacerBuilder::new(self)
     }
     pub fn build(self, manager: &mut UpdateManager) -> GridHandle {
         let [x_spacer, y_spacer] = self.spacers;
@@ -132,24 +130,17 @@ impl GridBuilder {
 }
 
 
-
-
-
-fn spacer_after_repeat_count(spacer: &GridSpacer) -> usize {
-    spacer.iter().skip_while(|s| match s {SpacerUnit::Repeat(_) => false, _ => true}).count()
-}
-
 enum SolveUnits {
     Exact(VUnit),
     Fraction(Fractiont),
 }
 
-fn units_solve(u: UserUnits, pos: VUnit, len: VUnit) -> SolveUnits {
+fn units_solve(u: UserUnits, len: VUnit) -> SolveUnits {
     use SolveUnits::*;
     match u {
         UserUnits::Pixel(p) => {
             Exact(p.into())
-        },
+        }
         UserUnits::Ratio(f) => {
             Exact(((len.pix() * f).round() as i32).into())
         }
@@ -170,10 +161,10 @@ fn expand_spacer<'a>(spacer: &'a GridSpacer, pos: VUnit, len: VUnit, repeat_coun
                 iter::repeat(u).take(1)
             }
             SpacerUnit::Repeat(u) => {
-                iter::repeat(u).take(repeat_count)
+                iter::repeat(u).take(repeat_count + 1)
             }
         }
-    }).flatten().map(move |&u| units_solve(u, pos, len));
+    }).flatten().map(move |&u| units_solve(u, len));
     let (total_f, taken_u) = iter_res.clone().fold((0, 0.into()),|(a, rest), u| {
         match u {
             SolveUnits::Fraction(f) => (a + f, rest),
@@ -181,7 +172,7 @@ fn expand_spacer<'a>(spacer: &'a GridSpacer, pos: VUnit, len: VUnit, repeat_coun
         }
     });
     let units_remaining = len - taken_u;
-    let mut curr_pos = 0.into();
+    let mut curr_pos = pos;
     let iter_res = iter_res.map(move |u| {
         SpacerSolved {
             pos: curr_pos,
@@ -191,9 +182,7 @@ fn expand_spacer<'a>(spacer: &'a GridSpacer, pos: VUnit, len: VUnit, repeat_coun
                     u
                 }
                 SolveUnits::Fraction(f) => {
-                    let u = {
-                        ((f as i32) * units_remaining) / (total_f as i32)
-                    };
+                    let u = ((f as i32) * units_remaining) / (total_f as i32);
                     curr_pos += u;
                     u
                 }
@@ -246,7 +235,7 @@ impl Grid {
         let (outer_offset, inner_offset) = (bounds_offset, 1-bounds_offset);
         let repeat_count = (self.handles.len() / inner.len()).checked_sub(outer.len() - 1).unwrap_or(0);
         let outer_spacer = expand_spacer(outer, bounds[outer_offset], bounds[2 + outer_offset], repeat_count);
-        let inner_spacer = expand_spacer(inner, bounds[inner_offset], bounds[2 + inner_offset], 0);
+        let inner_spacer = expand_spacer(inner, bounds[inner_offset], bounds[2 + inner_offset], repeat_count);
         self.outer_vec.clear();
         self.inner_vec.clear();
         self.outer_vec.extend(outer_spacer);
@@ -255,14 +244,13 @@ impl Grid {
             OUT_OFFSET => (&self.inner_vec,&self.outer_vec),
             IN_OFFSET | _ => (&self.outer_vec,&self.inner_vec), 
         };
-        debug!("{:?}", self.handles.len());
         self.handles.iter().enumerate().for_each(|(i, h)|{
             let Some(handle) = h else {
                 return;
             };
             let (x,y) = match outer_offset {
-                OUT_OFFSET => (i/self.y_spacer.len(), i%self.y_spacer.len()),
-                _ => (i%self.x_spacer.len(), i/self.x_spacer.len())
+                OUT_OFFSET => (i/yvec.len(), i%yvec.len()),
+                _ => (i%xvec.len(), i/xvec.len())
             };
             let SpacerSolved {
                 pos: x,
@@ -272,8 +260,7 @@ impl Grid {
                 pos: y,
                 len: h,
             } = yvec[y];
-            debug!("{:?}", BBox{x,y,w,h});
-            frames.update(handle, BBox{x,y,w,h});
+            frames.update(handle, &BBox{x,y,w,h});
 
         })
     }
