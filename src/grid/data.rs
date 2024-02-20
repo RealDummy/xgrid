@@ -6,7 +6,9 @@ use crate::{
 
 use crate::grid::GridSpacer;
 
-use super::{SpacerUnit, XName, YName};
+use crate::grid::{XName, YName};
+
+use super::SpacerUnit;
 
 #[derive(Clone, Copy, Debug)]
 pub enum GridExpandDir {
@@ -81,79 +83,29 @@ impl Grid {
     pub fn is_repeat_y(&self, id: usize) -> bool {
         return matches!(self.y_spacer[id], SpacerUnit::Repeat(_))
     }
+    fn find_next_slot<'a>(&self, 
+        mut candidates: impl std::iter::Iterator<Item = &'a HandleSpacerLocation>, 
+        spacers: &[SpacerUnit], 
+        which: impl Fn(&HandleSpacerLocation) -> usize
+    ) -> Option<usize> {
+        if let Some((next_free, _)) = candidates.by_ref().enumerate()
+            .find(|(_,h)| 
+                !(candidates.any(|h2| 
+                    which(h2) == which(h) + 1
+                )) || matches!(spacers[which(h)], SpacerUnit::Repeat(_))
+            ) {
+                Some(next_free)
+            } else {
+                None
+            }
+    }
+    fn find_next_x(&self) -> usize {
+        self.find_next_slot(&self.x_spacer)
+    }
+    fn find_next_y(&self) -> usize {
+        self.find_next_slot(&self.y_spacer)
+    }
     pub fn add_frame(&mut self, handle: FrameHandle, x: XName, y: YName) {
-        match (x.index(), y.index()) {
-            (Some(xi), Some(yi)) => {
-                let new = HandleSpacerLocation {
-                    x: xi,
-                    y: yi,
-                    handle
-                };
-                let spot = self.handles.iter_mut()
-                .take_while(|h| !self.is_repeat_x(h.x) && !self.is_repeat_y(h.y))
-                .find(|h| h.x == xi && h.y == yi);
-                match spot {
-                    Some(r) => {*r = new;},
-                    None => {self.handles.push(new)}
-                };
-            }
-            (None, Some(yi)) => {
-                let mut replace = self.handles.iter_mut()
-                    .filter(|h| h.y == yi)
-                    .take_while(|h| !self.is_repeat_x(h.x))
-                    .find(|h| !self.handles.iter().any(|h2| h2.x == h.x + 1));
-                match replace {
-                    Some(h) => {h.handle = handle}, // case handles iter finds missing spot before x repeats
-                    None if self.is_repeat_y(yi) => { // cant find missing spot because x has no repeats
-                        let xi = self.handles.iter().max_by_key(|h| h.x).map_or(0, |h| h.x);
-                        self.handles.push(HandleSpacerLocation {
-                            x: xi,
-                            y: yi,
-                            handle
-                        });
-                    }
-                    None => { //case 
-                        let xi = if let Some(GridExpandDir::X) = self.expand_dir {
-                            self.handles.iter().find(|h| self.is_repeat_x(h.x)).map_or(0, |h| h.x)
-                        } else {
-                            self.handles.iter().max_by_key(|h| h.x).map_or(0, |h| h.x)
-                        };
-                        self.handles.push(HandleSpacerLocation {
-                            x: xi,
-                            y: yi,
-                            handle
-                        });
-
-                    }
-                }
-                
-            }
-            (Some(xi), None) => {
-                let yi = self.handles.iter()
-                .fold(0, |a,h| usize::max(h.y, a));
-                self.handles.push(HandleSpacerLocation {
-                    x: xi,
-                    y: yi,
-                    handle
-                });
-            }
-            (None, None) => {}
-        }
-
-
-        let (exp_template, const_template) = match &self.expand_dir {
-            Some(GridExpandDir::X) => (&self.x_spacer, &self.y_spacer),
-            Some(GridExpandDir::Y) | None => (&self.y_spacer, &self.x_spacer),
-        };
-        let fixed_expand_len = exp_template.iter().filter(|&&s| matches!(s, SpacerUnit::Unit(_))).count(); //slow?
-        let fixed_constant_len = const_template.len();
-        let repeat_count = (self.handles.len() / self.constant_vec.len())
-            .checked_sub(self.expand_vec.len() - 1)
-            .unwrap_or(0);
-        
-        self.expand_vec.extend(outer_spacer);
-        self.constant_vec.extend(inner_spacer);
-        let xi = x.index();
-        let yi = y.index();
+        let xi = x.index().unwrap_or_else(||self.);
     }
 }

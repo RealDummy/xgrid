@@ -89,10 +89,11 @@ impl UpdateManager {
         GridBuilder::new(parent_frame)
     }
     pub(crate) fn add_grid(&mut self, grid: Grid) -> GridHandle {
-        let parent = grid.parent_frame_handle.index();
-        let handle = self.grid_renderer.add(grid);
-        self.frame_to_grid_handle_map[parent] = Some(handle);
-        return handle;
+        todo!();
+        // let parent = ();//grid.p;
+        // let handle = self.grid_renderer.add(grid);
+        // self.frame_to_grid_handle_map[parent] = Some(handle);
+        // return handle;
     }
     pub fn render<'a>(&'a self, render_pass: &mut wgpu::RenderPass<'a>) {
         self.frame_renderer.render(render_pass);
