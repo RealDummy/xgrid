@@ -1,7 +1,9 @@
-use std::{fmt, io::{BufWriter, Read}, ops::{Add, AddAssign, Div, Mul, Sub}};
+use std::{
+    fmt,
+    ops::{Add, AddAssign, Div, Mul, Sub},
+};
 
 use bytemuck::{Pod, Zeroable};
-
 
 pub type Pixelt = i32;
 pub type Ratiot = f32;
@@ -10,9 +12,9 @@ pub type Fractiont = u32;
 #[derive(Debug, Clone, Copy)]
 pub enum UserUnits {
     Zero,
-    Pixel (Pixelt),
-    Ratio (Ratiot),
-    Fraction (Fractiont),
+    Pixel(Pixelt),
+    Ratio(Ratiot),
+    Fraction(Fractiont),
 }
 
 /// i32 but 6 bits are for sub VUnit precision the max value is
@@ -24,11 +26,11 @@ pub struct VUnit(i32);
 impl VUnit {
     const PRECISION_BITS: i32 = 6;
     pub fn pix(&self) -> f32 {
-        let full_pix = (self.0 >> Self::PRECISION_BITS ) as f32;
-        let sub_pix = (self.0 % (1 << Self::PRECISION_BITS )) as f32 / 2.0f32.powi(Self::PRECISION_BITS);
+        let full_pix = (self.0 >> Self::PRECISION_BITS) as f32;
+        let sub_pix =
+            (self.0 % (1 << Self::PRECISION_BITS)) as f32 / 2.0f32.powi(Self::PRECISION_BITS);
 
         return full_pix + sub_pix;
-
     }
     pub fn new(p: i32) -> VUnit {
         p.into()
@@ -110,18 +112,15 @@ impl Div for VUnit {
     fn div(self, rhs: Self) -> Self::Output {
         self.pix() / rhs.pix()
     }
-
 }
 impl fmt::Debug for VUnit {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> { 
+    fn fmt(
+        &self,
+        formatter: &mut std::fmt::Formatter<'_>,
+    ) -> std::result::Result<(), std::fmt::Error> {
         formatter.write_fmt(format_args!("{:.2}", self.pix()))
     }
 }
 
-
 #[cfg(test)]
-mod test {
-    use super::*;
-    
-
-}
+mod test {}

@@ -1,25 +1,28 @@
 use std::iter;
 
-use bytemuck::{bytes_of, Pod, Zeroable};
+use bytemuck::{Pod, Zeroable};
 use frame::FrameRenderer;
-use grid::{GridRenderer, SpacerUnit};
-use log::{info, warn, debug};
+use grid::GridRenderer;
+use log::{info, warn};
 use manager::UpdateManager;
 use units::{UserUnits, VUnit};
-use wgpu::{util::DeviceExt, BufferSlice, PresentMode};
+use wgpu::{util::DeviceExt, PresentMode};
 use winit::{
-    dpi::PhysicalSize, event::*, event_loop::{ControlFlow, EventLoop}, keyboard::{Key, NamedKey, PhysicalKey, SmolStr}, window::{Window, WindowBuilder}
+    dpi::PhysicalSize,
+    event::*,
+    event_loop::EventLoop,
+    keyboard::{Key, NamedKey},
+    window::{Window, WindowBuilder},
 };
 
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
 
-mod units;
-mod grid;
 mod frame;
-mod manager;
+mod grid;
 mod handle;
-
+mod manager;
+mod units;
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -32,13 +35,11 @@ impl Vertex {
         wgpu::VertexBufferLayout {
             array_stride: std::mem::size_of::<Vertex>() as wgpu::BufferAddress,
             step_mode: wgpu::VertexStepMode::Vertex,
-            attributes: &[
-                wgpu::VertexAttribute {
-                    offset: 0,
-                    shader_location: 0,
-                    format: wgpu::VertexFormat::Float32x2,
-                },
-            ],
+            attributes: &[wgpu::VertexAttribute {
+                offset: 0,
+                shader_location: 0,
+                format: wgpu::VertexFormat::Float32x2,
+            }],
         }
     }
     fn state() -> wgpu::PrimitiveState {
@@ -67,14 +68,14 @@ const VERTICES: &[Vertex] = &[
         position: [-1., -1.],
     }, // B
     Vertex {
-        position: [1.0 , 1.],
+        position: [1.0, 1.],
     }, // C
     Vertex {
         position: [1.0, -1.0],
     }, // D
 ];
 
-pub type  WorldView = BBox;
+pub type WorldView = BBox;
 
 #[derive(Pod, Zeroable, Clone, Copy, Debug)]
 #[repr(C)]
@@ -93,9 +94,7 @@ pub struct Rect<T: Into<VUnit>> {
 }
 impl<T: Into<VUnit>> Into<BBox> for Rect<T> {
     fn into(self) -> BBox {
-        let Self {
-            x,y,w,h
-        } = self;
+        let Self { x, y, w, h } = self;
         BBox {
             x: x.into(),
             y: y.into(),
@@ -123,7 +122,10 @@ pub struct Borders<T: Into<VUnit>> {
 impl<T: Into<VUnit>> Into<MarginBox> for Borders<T> {
     fn into(self) -> MarginBox {
         let Self {
-            top,bottom,left,right
+            top,
+            bottom,
+            left,
+            right,
         } = self;
         MarginBox {
             top: top.into(),
@@ -144,7 +146,6 @@ struct State<'a> {
     size: PhysicalSize<f64>,
     update_manager: UpdateManager,
 }
-
 
 impl<'window> State<'window> {
     async fn new(window: &'window Window) -> Self {
@@ -203,17 +204,17 @@ impl<'window> State<'window> {
             format: surface_format,
             width: size.width,
             height: size.height,
-            present_mode: *surface_caps.present_modes.iter()
-                .find(|&&e| {
-                    e == PresentMode::Immediate
-                }).unwrap_or(&surface_caps.present_modes[0]),
+            present_mode: *surface_caps
+                .present_modes
+                .iter()
+                .find(|&&e| e == PresentMode::Immediate)
+                .unwrap_or(&surface_caps.present_modes[0]),
             alpha_mode: surface_caps.alpha_modes[0],
             view_formats: vec![],
-            desired_maximum_frame_latency: 2
+            desired_maximum_frame_latency: 2,
         };
         surface.configure(&device, &config);
 
-        
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Vertex Buffer"),
             contents: bytemuck::cast_slice(VERTICES),
@@ -227,23 +228,25 @@ impl<'window> State<'window> {
         };
 
         let mut update_manager = UpdateManager::new(&device, &config, &world_view);
-        
+
         let mut builder = update_manager.create_grid_in(update_manager.window());
-        let [x1,x2, xn] = builder.widths()
-                .add(UserUnits::Pixel(100))
-                .add(UserUnits::Fraction(1))
-                .add_expanding(UserUnits::Pixel(100))
-                .assign();
-            
-        let [y1, y2] = builder.heights()
+        let [_x1, _x2, xn] = builder
+            .widths()
+            .add(UserUnits::Pixel(100))
+            .add(UserUnits::Fraction(1))
+            .add_expanding(UserUnits::Pixel(100))
+            .assign();
+
+        let [y1, _y2] = builder
+            .heights()
             .add(UserUnits::Fraction(1))
             .add(UserUnits::Pixel(400))
             .assign();
 
         let g = builder.build(&mut update_manager);
 
-        for i in 0..12 {
-            let _f = update_manager.add_frame(g, xn,y1);
+        for _i in 0..12 {
+            let _f = update_manager.add_frame(g, xn, y1);
         }
 
         Self {
@@ -272,9 +275,10 @@ impl<'window> State<'window> {
             let cam = Rect {
                 x: 0,
                 y: 0,
-                w: new_size.width as i32, 
+                w: new_size.width as i32,
                 h: new_size.height as i32,
-            }.into();
+            }
+            .into();
 
             self.update_manager.update_world(&cam);
         }
@@ -295,10 +299,12 @@ impl<'window> State<'window> {
 
     fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
         let output = self.surface.get_current_texture()?;
-        let view = output.texture
+        let view = output
+            .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
 
-        let mut encoder = self.device
+        let mut encoder = self
+            .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("Render Encoder"),
             });
@@ -310,7 +316,7 @@ impl<'window> State<'window> {
                     view: &view,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear (wgpu::Color {
+                        load: wgpu::LoadOp::Clear(wgpu::Color {
                             r: 0.0,
                             g: 0.0,
                             b: 0.0,
@@ -345,7 +351,13 @@ pub async fn run() {
     }
 
     let event_loop = EventLoop::new().expect("event loop failed to new");
-    let window = WindowBuilder::new().with_inner_size(winit::dpi::LogicalSize {width: 400, height: 400}).build(&event_loop).unwrap();
+    let window = WindowBuilder::new()
+        .with_inner_size(winit::dpi::LogicalSize {
+            width: 400,
+            height: 400,
+        })
+        .build(&event_loop)
+        .unwrap();
 
     #[cfg(target_arch = "wasm32")]
     {
@@ -415,7 +427,6 @@ pub async fn run() {
             }
             _ => {}
         }
-        
     });
     if let Err(e) = exit_status {
         warn!("{e}")

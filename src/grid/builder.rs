@@ -1,6 +1,11 @@
-use std::{iter, marker::PhantomData};
+use std::marker::PhantomData;
 
-use crate::{frame::FrameHandle, handle::{FallableHandleLike, Handle, HandleLike}, manager::UpdateManager, units::{Fractiont, UserUnits, VUnit}};
+use crate::{
+    frame::FrameHandle,
+    handle::{FallableHandleLike, Handle, HandleLike},
+    manager::UpdateManager,
+    units::UserUnits,
+};
 
 use super::{data::GridExpandDir, GridHandle};
 
@@ -9,9 +14,6 @@ pub enum SpacerUnit {
     Unit(UserUnits),
     Repeat(UserUnits),
 }
-
-const X: usize = 0;
-const Y: usize = 1;
 
 #[derive(Clone, Copy, Default)]
 pub struct Width {}
@@ -33,7 +35,7 @@ impl Dir for XName {
     fn new(i: Option<usize>) -> Self {
         match i {
             Some(i) => Some(Handle::new(i)),
-            None => None
+            None => None,
         }
     }
 }
@@ -44,7 +46,7 @@ impl Dir for YName {
     fn new(i: Option<usize>) -> Self {
         match i {
             Some(i) => Some(Handle::new(i)),
-            None => None
+            None => None,
         }
     }
 }
@@ -57,7 +59,6 @@ pub struct GridBuilder {
     parent: FrameHandle,
 }
 
-
 pub struct SpacerBuilder<'b, const EXPANDS: bool, T: Dir + FallableHandleLike> {
     grid_builder: &'b mut GridBuilder,
     spacer: GridSpacer,
@@ -65,7 +66,7 @@ pub struct SpacerBuilder<'b, const EXPANDS: bool, T: Dir + FallableHandleLike> {
 }
 
 impl<'b, const EXPANDS: bool, T: Dir + FallableHandleLike> SpacerBuilder<'b, EXPANDS, T> {
-    fn new(grid_builder: &'b mut GridBuilder)-> Self {
+    fn new(grid_builder: &'b mut GridBuilder) -> Self {
         Self {
             grid_builder: grid_builder,
             spacer: GridSpacer::new(),
@@ -84,15 +85,20 @@ impl<'b, const EXPANDS: bool, T: Dir + FallableHandleLike> SpacerBuilder<'b, EXP
         }
         self.grid_builder.expands = match &self.grid_builder.expands {
             None => Some(T::dir()),
-            _ if EXPANDS => {panic!("grid's can only have one expanding direction")},
+            _ if EXPANDS => {
+                panic!("grid's can only have one expanding direction")
+            }
             n => *n,
         };
-        self.grid_builder.spacers[match T::dir() {GridExpandDir::X => 0, _=>1}] = self.spacer;
+        self.grid_builder.spacers[match T::dir() {
+            GridExpandDir::X => 0,
+            _ => 1,
+        }] = self.spacer;
         res
     }
 }
 
-impl<'b, T:Dir + FallableHandleLike> SpacerBuilder<'b, false, T> {
+impl<'b, T: Dir + FallableHandleLike> SpacerBuilder<'b, false, T> {
     pub fn add_expanding(mut self: Self, u: UserUnits) -> SpacerBuilder<'b, true, T> {
         self.spacer.push(SpacerUnit::Repeat(u.clone()));
         SpacerBuilder {
@@ -106,14 +112,10 @@ impl<'b, T:Dir + FallableHandleLike> SpacerBuilder<'b, false, T> {
 pub type WidthSpacerBuilder<'a, const EXPANDS: bool> = SpacerBuilder<'a, EXPANDS, XName>;
 pub type HeightSpacerBuilder<'a, const EXPANDS: bool> = SpacerBuilder<'a, EXPANDS, YName>;
 
-
 impl GridBuilder {
-    pub fn new(parent: FrameHandle)-> GridBuilder {
+    pub fn new(parent: FrameHandle) -> GridBuilder {
         GridBuilder {
-            spacers: [
-                GridSpacer::new(),
-                GridSpacer::new(),
-            ],
+            spacers: [GridSpacer::new(), GridSpacer::new()],
             expands: None,
             parent,
         }
@@ -127,12 +129,10 @@ impl GridBuilder {
     pub fn build(self, manager: &mut UpdateManager) -> GridHandle {
         let [x_spacer, y_spacer] = self.spacers;
         manager.add_grid(crate::grid::Grid::new(
-        self.parent, 
-                x_spacer,
-                y_spacer,
-                self.expands,
-            )
-        )
+            self.parent,
+            x_spacer,
+            y_spacer,
+            self.expands,
+        ))
     }
 }
-

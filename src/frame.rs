@@ -1,5 +1,5 @@
-mod renderer;
 mod data;
+mod renderer;
 
 pub use data::FrameData;
-pub use renderer::{FrameRenderer, FrameHandle};
+pub use renderer::{FrameHandle, FrameRenderer};

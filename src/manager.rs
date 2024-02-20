@@ -1,7 +1,11 @@
 use bytemuck::Zeroable;
-use log::debug;
 
-use crate::{frame::{FrameData, FrameHandle}, grid::{Grid, GridBuilder, GridHandle, XName, YName}, units::VUnit, BBox, Borders, FrameRenderer, GridRenderer, MarginBox, Rect, WorldView, handle::HandleLike};
+use crate::{
+    frame::{FrameData, FrameHandle},
+    grid::{Grid, GridBuilder, GridHandle, XName, YName},
+    handle::HandleLike,
+    BBox, Borders, FrameRenderer, GridRenderer, MarginBox, WorldView,
+};
 pub struct UpdateManager {
     grid_renderer: GridRenderer,
     frame_renderer: FrameRenderer,
@@ -16,15 +20,20 @@ pub enum UpdateMessage {
     Size(BBox),
 }
 
-impl  UpdateManager {
+impl UpdateManager {
     pub fn new(
-        device: &wgpu::Device, 
-        config: &wgpu::SurfaceConfiguration, 
+        device: &wgpu::Device,
+        config: &wgpu::SurfaceConfiguration,
         world: &WorldView,
     ) -> Self {
         let mut frame_renderer = FrameRenderer::new(device, config);
-        let window_handle =frame_renderer.add(FrameData {
-            data: BBox {x: 0.into(), y: 0.into(), w: world.w, h: world.h},
+        let window_handle = frame_renderer.add(FrameData {
+            data: BBox {
+                x: 0.into(),
+                y: 0.into(),
+                w: world.w,
+                h: world.h,
+            },
             margin: MarginBox::zeroed(),
             color: [255, 255, 255, 30],
             camera_index: 0,
@@ -46,8 +55,11 @@ impl  UpdateManager {
         match message {
             UpdateMessage::Size(bounds) => {
                 self.frame_renderer.update(frame_handle, bounds);
-                if let Some(Some(grid_handle)) = self.frame_to_grid_handle_map.get(frame_handle.index()) {
-                    self.grid_renderer.update(*grid_handle, bounds, &mut self.frame_renderer);
+                if let Some(Some(grid_handle)) =
+                    self.frame_to_grid_handle_map.get(frame_handle.index())
+                {
+                    self.grid_renderer
+                        .update(*grid_handle, bounds, &mut self.frame_renderer);
                 }
             }
         }
@@ -60,16 +72,20 @@ impl  UpdateManager {
         self.frame_to_grid_handle_map.push(None);
         let fh = self.frame_renderer.add(FrameData {
             data: BBox::zeroed(),
-            margin: Borders {top: 10, bottom: 10, left: 10, right: 10}.into(),
-            color: [255,255,255,25 ],
+            margin: Borders {
+                top: 10,
+                bottom: 10,
+                left: 10,
+                right: 10,
+            }
+            .into(),
+            color: [255, 255, 255, 25],
             camera_index: self.grid_renderer.get_parent_handle(grid_handle).index() as u32,
         });
-        self.grid_renderer.add_frame(grid_handle, fh,x,y);
+        self.grid_renderer.add_frame(grid_handle, fh, x, y);
         return fh;
     }
-    pub fn create_grid_in(&mut self, 
-        parent_frame: FrameHandle, 
-    ) -> GridBuilder {
+    pub fn create_grid_in(&mut self, parent_frame: FrameHandle) -> GridBuilder {
         GridBuilder::new(parent_frame)
     }
     pub(crate) fn add_grid(&mut self, grid: Grid) -> GridHandle {
@@ -78,7 +94,7 @@ impl  UpdateManager {
         self.frame_to_grid_handle_map[parent] = Some(handle);
         return handle;
     }
-    pub fn render<'a>(&'a self,render_pass: &mut wgpu::RenderPass<'a>) {
+    pub fn render<'a>(&'a self, render_pass: &mut wgpu::RenderPass<'a>) {
         self.frame_renderer.render(render_pass);
         self.grid_renderer.render(render_pass); //no op
     }

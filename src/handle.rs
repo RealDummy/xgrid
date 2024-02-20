@@ -1,6 +1,5 @@
 use std::{marker::PhantomData, num::NonZeroUsize};
 
-
 #[derive(Clone, Copy)]
 pub struct Handle<T> {
     index: NonZeroUsize,
@@ -14,8 +13,8 @@ pub trait FallableHandleLike {
 impl<T: HandleLike> FallableHandleLike for Option<T> {
     fn index(&self) -> Option<usize> {
         match self {
-            None=> None,
-            Some(h) => Some(h.index()),
+            None => None,
+            Some(h) => Some(T::index(h)),
         }
     }
 }
@@ -28,11 +27,11 @@ pub trait HandleLike {
 impl<T> HandleLike for Handle<T> {
     fn new(i: usize) -> Self {
         Self {
-            index: NonZeroUsize::try_from(i+1).unwrap(),
+            index: NonZeroUsize::try_from(i + 1).unwrap(),
             _t: PhantomData,
         }
     }
     fn index(&self) -> usize {
-        self.index()
+        self.index.get() - 1
     }
 }

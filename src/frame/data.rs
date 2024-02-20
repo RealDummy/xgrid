@@ -1,9 +1,8 @@
 use std::mem;
 
-use bytemuck::{NoUninit, Pod, Zeroable};
-use wgpu::naga::Handle;
+use bytemuck::{Pod, Zeroable};
 
-use crate::{units::VUnit, BBox, MarginBox};
+use crate::{BBox, MarginBox};
 
 #[repr(usize)]
 #[derive(Clone, Copy)]
@@ -55,8 +54,8 @@ impl FrameData {
                     format: wgpu::VertexFormat::Uint32,
                     offset: mem::size_of::<(BBox, MarginBox, [u8; 4])>() as u64,
                     shader_location: 4,
-                }
-            ]
+                },
+            ],
         }
     }
     pub const BUFFER_INIT_BYTE_COUNT: u64 = 100 * mem::size_of::<Self>() as u64;
