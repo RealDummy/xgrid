@@ -1,7 +1,9 @@
-use std::{ops::Index, vec};
+use std::{iter::{self, Enumerate}, ops::Index, vec};
+
+use log::debug;
 
 use crate::{
-    frame::{FrameHandle, FrameRenderer}, grid::SpacerSolved, handle::{FallableHandleLike, HandleLike}, BBox
+    frame::{FrameHandle, FrameRenderer}, handle::{FallableHandleLike, HandleLike}, units::{Fractiont, UserUnits, VUnit}, BBox
 };
 
 use crate::grid::GridSpacer;
@@ -17,19 +19,85 @@ pub enum GridExpandDir {
 }
 
 struct HandleSpacerLocation {
-    x: usize,
-    y: usize,
+    major: usize,
+    cross: usize,
     handle: FrameHandle,
 }
 
 pub struct Grid {
     handles: Vec<HandleSpacerLocation>,
-    x_spacer: GridSpacer,
-    y_spacer: GridSpacer,
+    cross_spacer: GridSpacer,
+    major_spacer: GridSpacer,
     expand_dir: Option<GridExpandDir>,
     parent_frame_handle: FrameHandle,
-    expand_vec: Vec<SpacerSolved>,
-    constant_vec: Vec<SpacerSolved>,
+    major_row_counts: Vec<usize>,
+}
+
+
+#[derive(Clone)]
+pub struct SpacerSolved {
+    pub pos: VUnit,
+    pub len: VUnit,
+    pub count: usize,
+}
+
+#[derive(Clone)]
+enum SolveUnits {
+    Exact(VUnit),
+    Fraction(Fractiont),
+}
+
+fn units_solve(u: UserUnits, len: VUnit) -> SolveUnits {
+    use SolveUnits::*;
+    match u {
+        UserUnits::Pixel(p) => Exact(p.into()),
+        UserUnits::Ratio(f) => Exact(((len.pix() * f).round() as i32).into()),
+        UserUnits::Zero => Exact(0.into()),
+        UserUnits::Fraction(f) => Fraction(f),
+    }
+}
+
+fn solve_spacer<'a>(
+    items: impl Iterator<Item = &'a HandleSpacerLocation> + Clone + 'a,
+    spacer_template: &'a GridSpacer,
+    which: impl Fn(&HandleSpacerLocation) -> usize + Clone + 'a,
+    pos: VUnit,
+    len: VUnit,
+) -> impl Iterator<Item = SpacerSolved> + 'a {
+        let iter_res = spacer_template.iter().enumerate().flat_map(move |(i,u)|{
+            let count = items.clone().filter(|s| which(s) == i).count();
+            iter::repeat((count,u)).take(count.max(1))
+        })
+        .map(|(i,s)| (i, match s {
+            SpacerUnit::Unit(u) => u,
+            SpacerUnit::Repeat(u) => u,
+        }))
+        .map(move|(i, u)| (i,units_solve(*u, len)));
+    //debug!("count b4 {}", iter_res.clone().count());
+    let (total_f, taken_u) = iter_res.clone()
+        .fold((0, 0.into()), |(a, rest), (i, u)| match u {
+            SolveUnits::Fraction(f) => (a + f, rest),
+            SolveUnits::Exact(v) => (a, rest + v),
+        });
+    let units_remaining = (len - taken_u).max(0.into());
+    let mut curr_pos = pos;
+    let iter_res = iter_res.map(move |(i,u)| SpacerSolved {
+        count: i,
+        pos: curr_pos,
+        len: match u {
+            SolveUnits::Exact(u) => {
+                curr_pos += u;
+                u
+            }
+            SolveUnits::Fraction(f) => {
+                let u = ((f as i32) * units_remaining) / (total_f as i32);
+                curr_pos += u;
+                u
+            }
+        },
+    });
+    //debug!("count: {}", iter_res.clone().count());
+    iter_res
 }
 
 impl Grid {
@@ -39,73 +107,123 @@ impl Grid {
         y_spacer: GridSpacer,
         expand_dir: Option<GridExpandDir>,
     ) -> Self {
+        let ( major_spacer, cross_spacer ) = match expand_dir {
+            Some(GridExpandDir::X) => (x_spacer, y_spacer),
+            _ => (y_spacer, x_spacer),
+        };
         Self {
-            x_spacer,
-            y_spacer,
+            major_spacer,
+            cross_spacer,
             expand_dir,
             handles: vec![],
-            expand_vec: vec![],
-            constant_vec: vec![],
+            major_row_counts: vec![],
             parent_frame_handle,
         }
     }
-
+    pub fn parent(&self) -> FrameHandle{
+        return self.parent_frame_handle
+    }
     pub fn update(&mut self, frames: &mut FrameRenderer) {
-        const OUT_OFFSET: usize = 1;
-        const IN_OFFSET: usize = 0;
-        let bounds = {
-            let BBox { x, y, w, h } = frames.get(self.parent_frame_handle).data;
-            [x, y, w, h]
+        let parent_box = frames.get(self.parent_frame_handle).data;
+        self.handles.sort_by_key(|h| (h.major, h.cross)); //not needed?
+        let BBox {x: major_pos, y:cross_pos, w: major_len, h:cross_len } = match self.expand_dir {
+            Some(GridExpandDir::X) => BBox { x: parent_box.y, y: parent_box.x, w: parent_box.h, h: parent_box.w },
+            _ => parent_box,
         };
-        let (outer, inner, bounds_offset) = match self.expand_dir {
-            Some(GridExpandDir::X) => (&self.x_spacer, &self.y_spacer, IN_OFFSET),
-            Some(GridExpandDir::Y) | None => (&self.y_spacer, &self.x_spacer, OUT_OFFSET),
-        };
-        let (outer_offset, inner_offset) = (bounds_offset, 1 - bounds_offset);
+        let cross_solve: Vec<_> = solve_spacer(self.handles.iter(), &self.cross_spacer, |h| h.cross, cross_pos, cross_len).collect();
+
+        for cross_index in 0..self.cross_spacer.len() {
+            //debug!("major_index: {}", major_index);
+            let mut major_iter = self.handles.iter().filter(|h| h.cross == cross_index);
+            let major_solve = solve_spacer(major_iter.clone(), &self.major_spacer,|h|h.major, major_pos, major_len);
+            major_solve.for_each(|solve|{
+                let cross_solve = &cross_solve[cross_index];
+                let bounds = match self.expand_dir {
+                    Some(GridExpandDir::X) => BBox{ x: solve.pos, y: cross_solve.pos, w: solve.len, h: cross_solve.len },
+                    _ => BBox{ y: solve.pos, x: cross_solve.pos, h: solve.len, w: cross_solve.len }
+                };
+                debug!("cross index: {}", cross_index);
+                major_iter.by_ref().take(solve.count.min(1)).for_each(|loc|{
+                    frames.update(loc.handle, &bounds);
+                })
+            })
+            
+        }
         
-        let (xvec, yvec) = match bounds_offset {
-            OUT_OFFSET => (&self.constant_vec, &self.expand_vec),
-            IN_OFFSET | _ => (&self.expand_vec, &self.constant_vec),
-        };
-        self.handles.iter().enumerate().for_each(|(i, handle)| {
-            let (x, y) = match outer_offset {
-                OUT_OFFSET => (i / yvec.len(), i % yvec.len()),
-                _ => (i % xvec.len(), i / xvec.len()),
-            };
-            let SpacerSolved { pos: x, len: w } = xvec[x];
-            let SpacerSolved { pos: y, len: h } = yvec[y];
-            frames.update(handle.handle, &BBox { x, y, w, h });
-        })
+        
+
     }
-    pub fn is_repeat_x(&self, id: usize) -> bool {
-        return matches!(self.x_spacer[id], SpacerUnit::Repeat(_))
-    }
-    pub fn is_repeat_y(&self, id: usize) -> bool {
-        return matches!(self.y_spacer[id], SpacerUnit::Repeat(_))
-    }
-    fn find_next_slot<'a>(&self, 
-        mut candidates: impl std::iter::Iterator<Item = &'a HandleSpacerLocation>, 
-        spacers: &[SpacerUnit], 
+
+    fn find_next_slot<'a, T>(&self, 
+        competitors: T, 
+        slot_spacers: &[SpacerUnit],
         which: impl Fn(&HandleSpacerLocation) -> usize
-    ) -> Option<usize> {
-        if let Some((next_free, _)) = candidates.by_ref().enumerate()
-            .find(|(_,h)| 
-                !(candidates.any(|h2| 
-                    which(h2) == which(h) + 1
-                )) || matches!(spacers[which(h)], SpacerUnit::Repeat(_))
+    ) -> Option<usize> where T: std::iter::Iterator<Item = &'a HandleSpacerLocation> + Clone {
+        if let Some((next_free, _)) = slot_spacers.iter().enumerate()
+            .find(|(i,_h)| 
+                !(competitors.clone().any(|h2| 
+                    which(h2) == *i
+                ))
             ) {
                 Some(next_free)
             } else {
-                None
+                slot_spacers.iter().enumerate().map(|(i, _)| 
+                    (competitors.clone().filter(|h|
+                        which(h) == i).count(),i
+                    )
+                ).min().map(|t| t.1)
             }
     }
-    fn find_next_x(&self) -> usize {
-        self.find_next_slot(&self.x_spacer)
+    fn find_next_major_spacer(&self, cross_index: Option<usize>) -> Option<usize> {
+        let candidates =  self.handles.iter().filter(|h| {
+            match cross_index {
+                Some(ci) => ci == h.cross,
+                None => true,
+            }
+        });
+        self.find_next_slot(candidates, &self.major_spacer.as_slice(), |h| h.major)
     }
-    fn find_next_y(&self) -> usize {
-        self.find_next_slot(&self.y_spacer)
+    fn find_next_cross_spacer(&self, major_index: Option<usize>) -> Option<usize> {
+        let candidates =  self.handles.iter().filter(|h| {
+            match major_index {
+                Some(mi) => mi == h.major,
+                None => true,
+            }
+        });
+        self.find_next_slot(candidates, &self.cross_spacer.as_slice(), |h| h.cross)
     }
-    pub fn add_frame(&mut self, handle: FrameHandle, x: XName, y: YName) {
-        let xi = x.index().unwrap_or_else(||self.);
+    pub fn add_frame(&mut self, handle: FrameHandle, x: XName, y: YName) -> Result<(),()> {
+        let (major_index, cross_index) = match self.expand_dir {
+            Some(GridExpandDir::X) => (x.index(),y.index()),
+            _ => (y.index(), x.index())
+        };
+        let next_major_index = match major_index {
+            None => {
+                if let Some(xi) = self.find_next_major_spacer(cross_index) {
+                    xi
+                } else {
+                    return Err(());
+                }
+            }
+            Some(n) => n,
+        };
+        debug!("{next_major_index} ? {:?}", handle.index());
+        let next_cross_index = match cross_index {
+            None => {
+                if let Some(yi) = self.find_next_cross_spacer(major_index) {
+                    yi
+                } else {
+                    return Err(());
+                }
+            }
+            Some(n) => n,
+        };
+        debug!("{next_major_index} {next_cross_index} {:?}", handle.index());
+        self.handles.push(HandleSpacerLocation {
+            major: next_major_index,
+            cross: next_cross_index,
+            handle,
+        });
+        return Ok(());
     }
 }

@@ -2,6 +2,7 @@ use std::{mem::size_of, vec::Vec};
 
 use bytemuck::{Pod, Zeroable};
 
+use log::debug;
 use wgpu::{
     include_wgsl, BufferUsages, Device, MultisampleState, RenderPass, RenderPipeline,
     RenderPipelineDescriptor, SurfaceConfiguration,
@@ -133,7 +134,7 @@ impl FrameRenderer {
         self.changed = None;
     }
     pub fn render<'rp>(&'rp self, render_pass: &mut RenderPass<'rp>) {
-        //debug!("cam: {:?}", self.camera_data[0]);
+        //debug!("frames: {:?}", self.data);
         render_pass.set_pipeline(&self.pipeline);
         render_pass.set_vertex_buffer(1, self.frame_buffer_handle.slice(..));
         render_pass.set_bind_group(0, &self.camera_bg_handle, &[]);

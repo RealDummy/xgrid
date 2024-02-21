@@ -230,25 +230,24 @@ impl<'window> State<'window> {
         let mut update_manager = UpdateManager::new(&device, &config, &world_view);
 
         let mut builder = update_manager.create_grid_in(update_manager.window());
-        let [_x1, _x2, xn] = builder
+        let [x1, x2, xn] = builder
             .widths()
             .add(UserUnits::Pixel(100))
             .add(UserUnits::Fraction(1))
             .add_expanding(UserUnits::Pixel(100))
             .assign();
 
-        let [y1, _y2] = builder
+        let [y1, y2] = builder
             .heights()
             .add(UserUnits::Fraction(1))
             .add(UserUnits::Pixel(400))
             .assign();
 
         let g = builder.build(&mut update_manager);
+        update_manager.add_frame(g, xn, y1);
 
-        for _i in 0..12 {
-            let _f = update_manager.add_frame(g, xn, y1);
-        }
-
+        update_manager.add_frame(g, xn, y2);
+        
         Self {
             surface,
             device,

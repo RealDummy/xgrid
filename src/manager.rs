@@ -1,3 +1,5 @@
+use std::{sync::mpsc, thread::JoinHandle};
+
 use bytemuck::Zeroable;
 
 use crate::{
@@ -7,6 +9,8 @@ use crate::{
     BBox, Borders, FrameRenderer, GridRenderer, MarginBox, WorldView,
 };
 pub struct UpdateManager {
+    enquer: mpsc::Sender<UpdateMessage>,
+    queue: mpsc::Receiver<UpdateMessage>,
     grid_renderer: GridRenderer,
     frame_renderer: FrameRenderer,
 
@@ -16,8 +20,12 @@ pub struct UpdateManager {
     window_handle: FrameHandle,
 }
 
+
+pub type UpdateCycleId = u32;
+
 pub enum UpdateMessage {
-    Size(BBox),
+    FrameSize(UpdateCycleId,FrameHandle, BBox),
+    Done(UpdateCycleId, mpsc::SyncSender<()>),
 }
 
 impl UpdateManager {
@@ -25,6 +33,8 @@ impl UpdateManager {
         device: &wgpu::Device,
         config: &wgpu::SurfaceConfiguration,
         world: &WorldView,
+        send: mpsc::Sender<UpdateMessage>,
+        recv: mpsc::Receiver<UpdateMessage>,
     ) -> Self {
         let mut frame_renderer = FrameRenderer::new(device, config);
         let window_handle = frame_renderer.add(FrameData {
@@ -43,24 +53,37 @@ impl UpdateManager {
             frame_renderer,
             frame_to_grid_handle_map: vec![None],
             window_handle,
+            queue: recv,
+            enquer: send,
+
         }
     }
     pub fn window(&self) -> FrameHandle {
         self.window_handle
     }
     pub fn update_world(&mut self, world: &WorldView) {
-        self.update(self.window(), &UpdateMessage::Size(*world));
+        self.update_frame(self.window(), *world);
     }
-    pub fn update(&mut self, frame_handle: FrameHandle, message: &UpdateMessage) {
-        match message {
-            UpdateMessage::Size(bounds) => {
-                self.frame_renderer.update(frame_handle, bounds);
-                if let Some(Some(grid_handle)) =
-                    self.frame_to_grid_handle_map.get(frame_handle.index())
-                {
-                    self.grid_renderer
-                        .update(*grid_handle, bounds, &mut self.frame_renderer);
+    pub fn update_all(&mut self) {
+        loop {
+            let mut done_sender = None;
+            match self.queue.recv().unwrap() {
+                UpdateMessage::FrameSize(id, handle, bounds) => {
+                    self.update_frame(handle, bounds);
                 }
+                UpdateMessage::Done(id, done_sender) => {
+                    
+                }
+            }
+        }
+    }
+    pub fn update_frame(&mut self, frame_handle: FrameHandle, size: BBox) {
+            self.frame_renderer.update(frame_handle, bounds);
+            if let Some(Some(grid_handle)) =
+                self.frame_to_grid_handle_map.get(frame_handle.index())
+            {
+                self.grid_renderer
+                    .update(*grid_handle, bounds, &mut self.frame_renderer);
             }
         }
     }
@@ -82,21 +105,39 @@ impl UpdateManager {
             color: [255, 255, 255, 25],
             camera_index: self.grid_renderer.get_parent_handle(grid_handle).index() as u32,
         });
-        self.grid_renderer.add_frame(grid_handle, fh, x, y);
+        self.grid_renderer.add_frame(&mut self.frame_renderer, grid_handle, fh, x, y);
         return fh;
     }
     pub fn create_grid_in(&mut self, parent_frame: FrameHandle) -> GridBuilder {
         GridBuilder::new(parent_frame)
     }
     pub(crate) fn add_grid(&mut self, grid: Grid) -> GridHandle {
-        todo!();
-        // let parent = ();//grid.p;
-        // let handle = self.grid_renderer.add(grid);
-        // self.frame_to_grid_handle_map[parent] = Some(handle);
-        // return handle;
+        self.grid_renderer.add(grid)
     }
     pub fn render<'a>(&'a self, render_pass: &mut wgpu::RenderPass<'a>) {
         self.frame_renderer.render(render_pass);
         self.grid_renderer.render(render_pass); //no op
+    }
+}
+
+pub struct UpdateQueue {
+    sender: mpsc::Sender<UpdateMessage>,
+}
+
+impl UpdateQueue {
+    pub fn new(
+        device: &wgpu::Device,
+        config: &wgpu::SurfaceConfiguration,
+        world: &WorldView,
+    ) {
+        let (send, recv) = mpsc::channel::<UpdateMessage>();
+        std::thread::spawn(move || {
+            let mut manager = UpdateManager::new(device, config, world, sender.clone(), recv);
+            loop {
+                manager.update_all();
+                ok_sender.send(()).unwrap();
+            }
+            
+        });
     }
 }
