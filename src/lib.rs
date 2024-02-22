@@ -230,24 +230,42 @@ impl<'window> State<'window> {
         let mut update_manager = UpdateManager::new(&device, &config, &world_view);
 
         let mut builder = update_manager.create_grid_in(update_manager.window());
-        let [x1, x2, xn] = builder
-            .widths()
+        let [x1, xn, x3] = builder
+            .heights()
             .add(UserUnits::Pixel(100))
-            .add(UserUnits::Fraction(1))
-            .add_expanding(UserUnits::Pixel(100))
+            .add_expanding(UserUnits::Fraction(1))
+            .add(UserUnits::Pixel(100))
             .assign();
 
-        let [y1, y2] = builder
-            .heights()
+        let [y1, y2, y3] = builder
+            .widths()
             .add(UserUnits::Fraction(1))
-            .add(UserUnits::Pixel(400))
+            .add(UserUnits::Pixel(150))
+            .add(UserUnits::Fraction(2))
             .assign();
+
+        let (x1,xn,x3, y1,y2,y3) = (y1,y2,y3, x1, xn, x3);
 
         let g = builder.build(&mut update_manager);
         update_manager.add_frame(g, xn, y1);
+        //update_manager.add_frame(g, xn, y1);
+
+        update_manager.add_frame(g, x1, y3);
+
+        update_manager.add_frame(g, x3, y1);
+
 
         update_manager.add_frame(g, xn, y2);
-        
+        update_manager.add_frame(g, xn, y2);
+
+        update_manager.add_frame(g, x3, y2);
+        update_manager.add_frame(g, x3, y2);
+
+        update_manager.add_frame(g, x1, y2);
+
+
+        //update_manager.add_frame(g, xn, None);
+
         Self {
             surface,
             device,
@@ -278,7 +296,6 @@ impl<'window> State<'window> {
                 h: new_size.height as i32,
             }
             .into();
-
             self.update_manager.update_world(&cam);
         }
     }

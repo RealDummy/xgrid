@@ -1,9 +1,9 @@
-use std::{iter::{self, Enumerate}, ops::Index, vec};
+use std::{iter::{self, Enumerate}, ops::Index, sync::mpsc, vec};
 
 use log::debug;
 
 use crate::{
-    frame::{FrameHandle, FrameRenderer}, handle::{FallableHandleLike, HandleLike}, units::{Fractiont, UserUnits, VUnit}, BBox
+    frame::{FrameHandle, FrameRenderer}, handle::{FallableHandleLike, HandleLike}, manager::UpdateMessage, units::{Fractiont, UserUnits, VUnit}, BBox
 };
 
 use crate::grid::GridSpacer;
@@ -125,12 +125,12 @@ impl Grid {
     }
     pub fn update(&mut self, frames: &mut FrameRenderer) {
         let parent_box = frames.get(self.parent_frame_handle).data;
-        self.handles.sort_by_key(|h| (h.major, h.cross)); //not needed?
+        self.handles.sort_by_key(|h| (h.major, h.cross));
         let BBox {x: major_pos, y:cross_pos, w: major_len, h:cross_len } = match self.expand_dir {
-            Some(GridExpandDir::X) => BBox { x: parent_box.y, y: parent_box.x, w: parent_box.h, h: parent_box.w },
-            _ => parent_box,
+            Some(GridExpandDir::X) => parent_box,
+            _ => BBox { x: parent_box.y, y: parent_box.x, w: parent_box.h, h: parent_box.w },
         };
-        let cross_solve: Vec<_> = solve_spacer(self.handles.iter(), &self.cross_spacer, |h| h.cross, cross_pos, cross_len).collect();
+        let cross_solve: Vec<_> = solve_spacer(self.handles.iter().take(0), &self.cross_spacer, |h| h.cross, cross_pos, cross_len).collect();
 
         for cross_index in 0..self.cross_spacer.len() {
             //debug!("major_index: {}", major_index);
@@ -142,15 +142,14 @@ impl Grid {
                     Some(GridExpandDir::X) => BBox{ x: solve.pos, y: cross_solve.pos, w: solve.len, h: cross_solve.len },
                     _ => BBox{ y: solve.pos, x: cross_solve.pos, h: solve.len, w: cross_solve.len }
                 };
-                debug!("cross index: {}", cross_index);
+                //debug!("cross index: {}", cross_index);
                 major_iter.by_ref().take(solve.count.min(1)).for_each(|loc|{
+                    //debug!("frame {}: {:?} {}", loc.handle.index(), bounds, solve.count);
                     frames.update(loc.handle, &bounds);
                 })
             })
             
         }
-        
-        
 
     }
 
@@ -207,7 +206,7 @@ impl Grid {
             }
             Some(n) => n,
         };
-        debug!("{next_major_index} ? {:?}", handle.index());
+        //debug!("{next_major_index} ? {:?}", handle.index());
         let next_cross_index = match cross_index {
             None => {
                 if let Some(yi) = self.find_next_cross_spacer(major_index) {
@@ -218,7 +217,7 @@ impl Grid {
             }
             Some(n) => n,
         };
-        debug!("{next_major_index} {next_cross_index} {:?}", handle.index());
+        //debug!("{next_major_index} {next_cross_index} {:?}", handle.index());
         self.handles.push(HandleSpacerLocation {
             major: next_major_index,
             cross: next_cross_index,
