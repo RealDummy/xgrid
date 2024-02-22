@@ -23,6 +23,7 @@ mod grid;
 mod handle;
 mod manager;
 mod units;
+mod message;
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
