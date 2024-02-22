@@ -264,8 +264,8 @@ impl<'window> State<'window> {
 
         update_manager.add_frame(g, x1, y2);
 
-
-        //update_manager.add_frame(g, xn, None);
+        
+        
 
         Self {
             surface,
