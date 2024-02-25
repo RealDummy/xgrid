@@ -5,5 +5,5 @@ type FrameExposedType = FrameData;
 
 // maybe?
 pub trait FrameMessage {
-    fn update_state(&self, frame: &FrameExposedType) -> FrameExposedType;
+    fn update_state(&self, updater: dyn FnOnce(&mut FrameExposedType)) -> FrameExposedType;
 }

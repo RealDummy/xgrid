@@ -9,8 +9,7 @@ use wgpu::{
 };
 
 use crate::{
-    handle::{Handle, HandleLike},
-    BBox, Vertex,
+    handle::{Handle, HandleLike}, manager::{BBox, Vertex},
 };
 
 use super::FrameData;
@@ -18,6 +17,7 @@ use super::FrameData;
 pub struct FrameRenderer {
     data: Vec<FrameData>,
     pipeline: RenderPipeline,
+    index_pipeline: RenderPipeline,
     frame_buffer_handle: wgpu::Buffer,
     changed: Option<usize>,
     camera_bg_handle: wgpu::BindGroup,
@@ -72,7 +72,7 @@ impl FrameRenderer {
             push_constant_ranges: &[],
         };
         let pipeline_layout = device.create_pipeline_layout(&pipeline_layout_descriptor);
-
+        
         let color_targets = [Some(wgpu::ColorTargetState {
             format: config.format,
             blend: Some(wgpu::BlendState::ALPHA_BLENDING),
@@ -103,6 +103,43 @@ impl FrameRenderer {
         };
         let pipeline = device.create_render_pipeline(&pipeline_descriptor);
 
+        let index_pipeline_layout_descriptor = wgpu::PipelineLayoutDescriptor {
+            label: Some("index pipeline layout"),
+            bind_group_layouts: &[&camera_bg_layout],
+            push_constant_ranges: &[],
+        };
+        let index_pipeline_layout = device.create_pipeline_layout(&index_pipeline_layout_descriptor);
+
+        let index_color_targets = [Some(wgpu::ColorTargetState {
+            format: wgpu::TextureFormat::R32Uint,
+            blend: None,
+            write_mask: wgpu::ColorWrites::ALL,
+        })];
+
+        let index_pipeline_descriptor = RenderPipelineDescriptor {
+            label: Some("frame index pipeline"),
+            layout: Some(&index_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &module,
+                entry_point: "vs_index_main",
+                buffers: &[Vertex::desc(), FrameData::desc()],
+            },
+            primitive: Vertex::state(),
+            depth_stencil: None,
+            multisample: MultisampleState {
+                count: 1,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &module,
+                entry_point: "fs_index_main",
+                targets: &index_color_targets,
+            }),
+            multiview: None,
+        };
+        let index_pipeline = device.create_render_pipeline(&index_pipeline_descriptor);
+
         let buffer_handle = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("frame instance buffer"),
             size: FrameData::BUFFER_INIT_BYTE_COUNT,
@@ -112,6 +149,7 @@ impl FrameRenderer {
         Self {
             pipeline,
             frame_buffer_handle: buffer_handle,
+            index_pipeline,
             data: vec![],
             changed: None,
             camera_buffer_handle,
@@ -140,6 +178,14 @@ impl FrameRenderer {
         render_pass.set_bind_group(0, &self.camera_bg_handle, &[]);
         render_pass.draw(0..4 as u32, 0..self.data.len() as u32);
     }
+    
+    pub fn render_index<'rp>(&'rp self, render_pass: &mut RenderPass<'rp>) {
+        //debug!("frames: {:?}", self.data);
+        render_pass.set_pipeline(&self.index_pipeline);
+        render_pass.set_vertex_buffer(1, self.frame_buffer_handle.slice(..));
+        render_pass.set_bind_group(0, &self.camera_bg_handle, &[]);
+        render_pass.draw(0..4 as u32, 0..self.data.len() as u32);
+    }
     pub fn add(&mut self, frame: FrameData) -> FrameHandle {
         self.camera_data.push(Camera { bbox: frame.data });
         self.data.push(frame);
@@ -147,6 +193,7 @@ impl FrameRenderer {
         return FrameHandle::new(self.data.len() - 1);
     }
     pub fn update(&mut self, handle: FrameHandle, bounds: &BBox) {
+        debug!("HERE");
         let frame = &mut self.data[handle.index()];
         frame.data = *bounds;
         self.camera_data[handle.index()].bbox = *bounds;

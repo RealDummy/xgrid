@@ -7,5 +7,5 @@
 
 ## short term goals
 
-- create a few rectangles of different colors, that changes a common rectangle to its color.
-    - this should set up the backbone for more complex message passinggit 
+- create a few rectangles of different colors, that changes a common rectangle to its color when clicked
+    - this should set up the backbone for more complex message passing

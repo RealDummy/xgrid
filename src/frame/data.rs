@@ -2,7 +2,7 @@ use std::mem;
 
 use bytemuck::{Pod, Zeroable};
 
-use crate::{BBox, MarginBox};
+use crate::manager::{BBox, MarginBox};
 
 #[repr(usize)]
 #[derive(Clone, Copy)]
@@ -59,8 +59,4 @@ impl FrameData {
         }
     }
     pub const BUFFER_INIT_BYTE_COUNT: u64 = 100 * mem::size_of::<Self>() as u64;
-}
-
-pub trait FrameSizer {
-    fn size_next(&self);
 }

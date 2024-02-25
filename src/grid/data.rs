@@ -3,7 +3,8 @@ use std::{iter::{self, Enumerate}, ops::Index, sync::mpsc, vec};
 use log::debug;
 
 use crate::{
-    frame::{FrameHandle, FrameRenderer}, handle::{FallableHandleLike, HandleLike}, manager::UpdateMessage, units::{Fractiont, UserUnits, VUnit}, BBox
+    manager::{BBox},
+    frame::{FrameHandle, FrameRenderer}, handle::{FallableHandleLike, HandleLike}, manager::UpdateMessage, units::{Fractiont, UserUnits, VUnit},
 };
 
 use crate::grid::GridSpacer;
@@ -24,7 +25,7 @@ struct HandleSpacerLocation {
     handle: FrameHandle,
 }
 
-pub struct Grid {
+pub struct GridData {
     handles: Vec<HandleSpacerLocation>,
     cross_spacer: GridSpacer,
     major_spacer: GridSpacer,
@@ -100,7 +101,7 @@ fn solve_spacer<'a>(
     iter_res
 }
 
-impl Grid {
+impl GridData {
     pub fn new(
         parent_frame_handle: FrameHandle,
         x_spacer: GridSpacer,
@@ -124,6 +125,7 @@ impl Grid {
         return self.parent_frame_handle
     }
     pub fn update(&mut self, frames: &mut FrameRenderer) {
+        debug!("GRID UPDATE");
         let parent_box = frames.get(self.parent_frame_handle).data;
         self.handles.sort_by_key(|h| (h.major, h.cross));
         let BBox {x: major_pos, y:cross_pos, w: major_len, h:cross_len } = match self.expand_dir {

@@ -2,17 +2,17 @@ use std::iter;
 
 use log::error;
 
-use crate::frame::FrameHandle;
+use crate::frame::{FrameHandle, FrameRenderer};
 use crate::handle::HandleLike;
+use crate::manager::BBox;
 use crate::units::{Fractiont, UserUnits};
-use crate::{handle::Handle, FrameRenderer};
-use crate::{BBox, VUnit};
+use crate::{handle::Handle};
 
-use super::{Grid, GridSpacer, SpacerUnit, XName, YName};
+use super::{GridData, GridSpacer, SpacerUnit, XName, YName};
 use crate::handle::FallableHandleLike;
 
 pub struct GridRenderer {
-    data: Vec<Grid>,
+    data: Vec<GridData>,
 }
 
 
@@ -53,7 +53,7 @@ impl GridRenderer {
         }
         self.data[grid_handle.index()].update(frame_renderer);
     }
-    pub fn add(&mut self, g: Grid) -> GridHandle {
+    pub fn add(&mut self, g: GridData) -> GridHandle {
         self.data.push(g);
         return GridHandle::new(self.data.len() - 1);
     }
