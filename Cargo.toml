@@ -6,7 +6,7 @@ edition = "2021"
 [lib]
 name = "xgrid"
 crate-type = ["cdylib", "rlib"]
-
+proc_macro = true
 
 [dependencies]
 cfg-if = "1"

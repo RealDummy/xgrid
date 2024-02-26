@@ -2,6 +2,8 @@
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
 
+extern crate proc_macro;
+
 pub(crate) mod frame;
 pub(crate) mod grid;
 pub(crate) mod handle;

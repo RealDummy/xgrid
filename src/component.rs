@@ -1,9 +1,38 @@
-use std::iter::Iterator;
+use std::{collections::HashMap, fmt::Debug, iter::{self, Iterator}, rc::Rc};
 
-use crate::message::FrameMessage;
+use crate::{frame::FrameHandle};
+// trait Message {
+//     fn apply(&self, target: &mut dyn Component);
+// }
 
-trait Component {
-    type UpdateMessage;
-    fn build(&self) -> dyn Iterator<Item = Box<dyn Component<UpdateMessage = Self::UpdateMessage>>>;
-    fn receive(&self, send: dyn Fn(Box<dyn FrameMessage>));
+trait Message {
+
+}
+
+trait Update {
+    type Msg: Debug;
+    fn update(&self, msg: Self::Msg);
+}
+
+
+
+trait Frame {
+    
+}
+
+
+impl<S: Update> Update for Component<S> {
+    type Msg = S::Msg;
+    fn update(&self, msg: Self::Msg) {
+        self.state.update(msg);
+    }
+}
+
+struct Component<S: Update> {
+    state: S,
+    handle: FrameHandle,
+}
+
+impl<S: Update> Frame for Component<S> {
+
 }
