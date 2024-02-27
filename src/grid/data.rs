@@ -139,7 +139,6 @@ impl GridData {
         return self.parent_frame_handle;
     }
     pub fn update(&mut self, frames: &mut FrameRenderer) {
-        debug!("GRID UPDATE");
         let parent_box = frames.get(self.parent_frame_handle).data;
         self.handles.sort_by_key(|h| (h.major, h.cross));
         let BBox {

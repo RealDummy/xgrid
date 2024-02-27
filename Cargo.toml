@@ -8,6 +8,9 @@ name = "xgrid"
 crate-type = ["cdylib", "rlib"]
 proc_macro = true
 
+[profile.release]
+debug = true
+
 [dependencies]
 cfg-if = "1"
 winit = "0.29.1"

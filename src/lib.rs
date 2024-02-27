@@ -14,4 +14,4 @@ pub(crate) mod units;
 pub use component::{Update, UpdateComponent, Interaction, ComponentHandle};
 pub use manager::{run, UpdateManager};
 pub use units::UserUnits::*;
-pub use frame::FrameHandle;
+pub use frame::{FrameHandle, FrameData};

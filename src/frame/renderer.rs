@@ -204,7 +204,6 @@ impl FrameRenderer {
         }
     }
     pub fn update_color(&mut self, handle: FrameHandle, color: [u8; 4]) {
-        debug!("Frame #: {}", handle.index());
         let frame = &mut self.data[handle.index()];
         frame.color = color;
         self.changed = match self.changed {
@@ -212,7 +211,7 @@ impl FrameRenderer {
             Some(u) => Some(usize::max(u, handle.index())),
         }
     }
-    pub fn get<'a>(&'a self, handle: FrameHandle) -> &'a FrameData {
-        &self.data[handle.index()]
+    pub fn get<'a>(&'a mut self, handle: FrameHandle) -> &'a mut FrameData {
+        &mut self.data[handle.index()]
     }
 }

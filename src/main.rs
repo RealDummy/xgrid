@@ -9,8 +9,8 @@ struct Div {
     down: bool,
 }
 impl Div {
-    const DC: [u8; 4] = [255;4];
-    const UC: [u8; 4] = [0; 4];
+    const UC: [u8; 4] = [100;4];
+    const DC: [u8; 4] = [50; 4];
 }
 
 impl Update for Div {
@@ -21,10 +21,9 @@ impl Update for Div {
         }
     }
     fn build(&self, frame: FrameHandle, manager: &mut UpdateManager) {
-        manager.update_frame_color(frame, if self.down {Div::DC} else {Div::UC} )
+        manager.get_frame_data(frame ).color = if self.down {Div::DC} else {Div::UC}
     }
     fn update(&mut self, msg: Self::Msg, frame: FrameHandle, manager: &mut UpdateManager) -> bool{
-        println!("{:?}", frame);
         return {
             let res = msg != self.down;
             self.down = msg;

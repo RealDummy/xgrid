@@ -297,6 +297,9 @@ impl<'a> UpdateManager<'a> {
         self.grid_renderer.prepare(&self.queue);
         self.frame_renderer.prepare(&self.queue);
     }
+    pub fn get_frame_data<'b>(&'b mut self, handle: FrameHandle) -> &'b mut FrameData {
+        self.frame_renderer.get(handle)
+    }
     pub fn add_frame<S: Update + 'static>(&mut self, grid_handle: GridHandle, x: XName, y: YName) -> ComponentHandle<S> {
         self.frame_to_grid_handle_map.push(None);
         let fh = self.frame_renderer.add(FrameData {

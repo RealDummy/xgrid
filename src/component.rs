@@ -2,7 +2,7 @@ use std::{borrow::BorrowMut, clone, fmt::Debug, rc::Rc, sync::Mutex};
 
 use log::{debug, warn};
 
-use crate::{frame::FrameHandle, handle::HandleLike, manager::UpdateManager};
+use crate::{frame::{FrameData, FrameHandle}, handle::HandleLike, manager::UpdateManager};
 
 
 pub enum UpdateAction {
