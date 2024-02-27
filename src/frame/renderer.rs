@@ -195,8 +195,7 @@ impl FrameRenderer {
         return FrameHandle::new(self.data.len() - 1);
     }
     pub fn update(&mut self, handle: FrameHandle, bounds: &BBox) {
-        debug!("HERE");
-        let frame = &mut self.data[handle.index()];
+        let frame: &mut FrameData = &mut self.data[handle.index()];
         frame.data = *bounds;
         self.camera_data[handle.index()].bbox = *bounds;
         self.changed = match self.changed {
@@ -205,7 +204,7 @@ impl FrameRenderer {
         }
     }
     pub fn update_color(&mut self, handle: FrameHandle, color: [u8; 4]) {
-        debug!("HERE");
+        debug!("Frame #: {}", handle.index());
         let frame = &mut self.data[handle.index()];
         frame.color = color;
         self.changed = match self.changed {

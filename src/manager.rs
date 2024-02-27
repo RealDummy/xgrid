@@ -1,4 +1,4 @@
-use std::{arch::x86_64, iter, marker::PhantomData, rc::Rc, sync::{self, atomic::{AtomicUsize, Ordering}, mpsc, Arc, Mutex}, thread};
+use std::{iter, marker::PhantomData, rc::Rc, sync::{self, atomic::{AtomicUsize, Ordering}, mpsc, Arc, Mutex}, thread};
 
 use bytemuck::{Pod, Zeroable};
 use log::{debug, warn};
@@ -12,7 +12,7 @@ use winit::{
 };
 
 use crate::{
-    component::{self, Component, Frame, QueryId, Update}, frame::{FrameData, FrameHandle, FrameRenderer}, grid::{GridBuilder, GridData, GridHandle, GridRenderer, XName, YName}, handle::{Handle, HandleLike}, units::{UserUnits, VUnit}, ComponentHandle, Interaction
+    component::{self, Component, Frame, QueryId, Update}, frame::{FrameData, FrameHandle, FrameRenderer}, grid::{GridBuilder, GridData, GridHandle, GridRenderer, XName, YName}, handle::{Handle, HandleLike}, manager, units::{UserUnits, VUnit}, ComponentHandle, Interaction, UpdateComponent
 };
 
 const VERTICES: &[Vertex] = &[
@@ -134,7 +134,7 @@ pub struct UpdateManager<'a> {
     vertex_buffer: wgpu::Buffer,
     surface: wgpu::Surface<'a>,
     window: &'a winit::window::Window,
-    size: winit::dpi::LogicalSize<u32>,
+    size: winit::dpi::PhysicalSize<u32>,
     index_render_target: wgpu::Texture,
     base_handle: FrameHandle,
     grid_renderer: GridRenderer,
@@ -156,11 +156,11 @@ pub enum UpdateMessage {
 
 
 impl<'a> UpdateManager<'a> {
-    pub async fn new(window: &'a Window) -> Self {
+    pub async fn new<App: Update + 'static>(window: &'a Window) -> (Self, ComponentHandle<App>) {
         let size = LogicalSize::<i32> {
             width: 400,
             height: 400,
-        };
+        }.to_physical(window.scale_factor());
         let world_view = WorldView {
             x: 0.into(),
             y: 0.into(),
@@ -259,7 +259,7 @@ impl<'a> UpdateManager<'a> {
             contents: bytemuck::cast_slice(VERTICES),
             usage: wgpu::BufferUsages::VERTEX,
         });
-        Self {
+        let mut manager = Self {
             size: size.cast(),
             vertex_buffer,
             index_render_target,
@@ -273,7 +273,9 @@ impl<'a> UpdateManager<'a> {
             config,
             device,
             queue,
-        }
+        };
+        let app = ComponentHandle::new(window_handle, App::init(window_handle, &mut manager));
+        return (manager, app);
     }
     pub fn window(&self) -> FrameHandle {
         self.base_handle
@@ -284,20 +286,18 @@ impl<'a> UpdateManager<'a> {
             .frame_to_grid_handle_map
             .get(frame_handle.index())
         {
-            debug!("grid update");
             self.grid_renderer
                 .update(*grid_handle, &size, &mut self.frame_renderer);
         }
     }
     pub fn update_frame_color(&mut self, frame_handle: FrameHandle, color: [u8; 4]) {
-        debug!("color UPDATE");
         self.frame_renderer.update_color(frame_handle, color);
     }
     pub fn prepare(&mut self) {
         self.grid_renderer.prepare(&self.queue);
         self.frame_renderer.prepare(&self.queue);
     }
-    pub fn add_frame<S: Update + 'static>(&mut self, state: S, grid_handle: GridHandle, x: XName, y: YName) -> ComponentHandle<S> {
+    pub fn add_frame<S: Update + 'static>(&mut self, grid_handle: GridHandle, x: XName, y: YName) -> ComponentHandle<S> {
         self.frame_to_grid_handle_map.push(None);
         let fh = self.frame_renderer.add(FrameData {
             data: BBox::zeroed(),
@@ -317,9 +317,9 @@ impl<'a> UpdateManager<'a> {
         self.grid_renderer
             .add_frame(&mut self.frame_renderer, grid_handle, fh, x, y);
 
-        let comp = ComponentHandle::new(self.components.len(), state);
+        let comp = ComponentHandle::new(fh, S::init(fh, self));
 
-        self.components.push(comp.component.clone());
+        self.components.push(comp.as_frame());
         comp 
     }
     pub fn create_grid_in(&mut self, parent_frame: FrameHandle) -> GridBuilder {
@@ -332,18 +332,18 @@ impl<'a> UpdateManager<'a> {
         return grid_handle;
     }
 
-    fn resize(&mut self, new_size: winit::dpi::LogicalSize<u32>) {
+    fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
         if new_size.width > 0 && new_size.height > 0 {
             self.size = new_size.cast();
             self.config.width = new_size.width;
             self.config.height = new_size.height;
             self.surface.configure(&self.device, &self.config);
-
+            let size = new_size.to_logical(self.window.scale_factor());
             let cam = Rect {
                 x: 0,
                 y: 0,
-                w: new_size.width as i32,
-                h: new_size.height as i32,
+                w: size.width,
+                h: size.height,
             }
             .into();
             self.update_frame(self.base_handle, cam);
@@ -430,7 +430,7 @@ impl<'a> UpdateManager<'a> {
 //     }
 // }
 
-pub async fn run<'a, App: Update<Msg = component::Interaction>>(mut app: App) {
+pub async fn run<'a, App: Update<Msg = component::Interaction> + 'static>() {
     cfg_if::cfg_if! {
         if #[cfg(target_arch = "wasm32")] {
             std::panic::set_hook(Box::new(console_error_panic_hook::hook));
@@ -462,9 +462,7 @@ pub async fn run<'a, App: Update<Msg = component::Interaction>>(mut app: App) {
     let event_loop = EventLoop::new().unwrap();
 
     let window = WindowBuilder::new().build(&event_loop).unwrap();
-    let mut updates: UpdateManager<'_> = UpdateManager::new(&window).await;
-
-    app.build(updates.window(), &mut updates);
+    let (mut updates, app) = UpdateManager::new::<App>(&window).await;
     
     
     let exit_status = event_loop.run(move |event: Event<_>, target| {
@@ -486,7 +484,7 @@ pub async fn run<'a, App: Update<Msg = component::Interaction>>(mut app: App) {
                             ..
                         } => target.exit(),
                         WindowEvent::Resized(physical_size) => {
-                            updates.resize(physical_size.to_logical(1.0));
+                            updates.resize(*physical_size);
                         }
                         WindowEvent::ScaleFactorChanged { .. } => {
                             ()
@@ -507,7 +505,7 @@ pub async fn run<'a, App: Update<Msg = component::Interaction>>(mut app: App) {
                             updates.window.request_redraw();
                         }
                         WindowEvent::MouseInput { state, .. } => {
-                            app.update(Interaction::Click(matches!(state, ElementState::Pressed)))
+                            app.update(Interaction::Click(matches!(state, ElementState::Pressed)), updates.window(), &mut updates);
                         }
                         _ => {}
                     }

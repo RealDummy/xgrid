@@ -1,19 +1,24 @@
 use std::{borrow::BorrowMut, clone, fmt::Debug, rc::Rc, sync::Mutex};
 
-use log::warn;
+use log::{debug, warn};
 
-use crate::{frame::FrameHandle, manager::{self, UpdateManager}};
+use crate::{frame::FrameHandle, handle::HandleLike, manager::UpdateManager};
 
+
+pub enum UpdateAction {
+    Rebuild,
+    None,
+}
 pub trait Update {
     type Msg: Debug;
-    fn update(&mut self, msg: Self::Msg);
+    fn update(&mut self, msg: Self::Msg, frame: FrameHandle, manager: &mut UpdateManager) -> bool;
     fn build(&self, frame: FrameHandle, manager: &mut UpdateManager);
-
+    fn init(frame: FrameHandle, manager: &mut UpdateManager) -> Self;
 }
 
-trait UpdateComponent {
+pub trait UpdateComponent {
     type Msg: Debug;
-    fn update(&self, msg: Self::Msg);
+    fn update(&self, msg: Self::Msg, frame: FrameHandle, manager: &mut UpdateManager);
     fn build(&self, frame: FrameHandle, manager: &mut UpdateManager);
 }
 
@@ -27,13 +32,51 @@ pub trait Frame {
     
 }
 
+
+pub struct QueryId {
+    handle: FrameHandle,
+    class: u32,
+}
+
+pub struct Component<S: Update> {
+    state: S,
+    ids: QueryId,
+    dirty: bool,
+}
+
+impl<S: Update> Frame for Component<S> {}
+
+pub struct ComponentHandle<S: Update> {
+    component: Rc<Mutex<Component<S>>>,
+}
+impl<S: Update + 'static> ComponentHandle<S> {
+    pub(super) fn new(frame: FrameHandle, state: S) -> Self {
+        Self {
+            component: Rc::new(Mutex::new(Component{
+                state: state,
+                dirty: true,
+                ids: QueryId {
+                    handle: frame,
+                    class: 0,
+                }
+            })),
+        }
+    }
+    pub(super) fn as_frame(&self) -> Rc<Mutex<dyn Frame>> {
+        self.component.clone()
+    }
+}
+
 impl<S: Update> UpdateComponent for ComponentHandle<S> {
     type Msg = S::Msg;
-    fn update(&self, msg: Self::Msg) {
+    fn update(&self, msg: Self::Msg, frame: FrameHandle, manager: &mut UpdateManager) {
         loop {
             match self.component.lock() {
                 Ok(mut state) => {
-                    state.state.update(msg);
+                    let handle = state.ids.handle;
+                    if state.state.update(msg, handle, manager) {
+                        state.state.build(handle, manager)
+                    }
                     return;
                 }
                 Err(e) => {
@@ -54,35 +97,6 @@ impl<S: Update> UpdateComponent for ComponentHandle<S> {
                 }
             }
 
-        }
-    }
-}
-
-pub struct QueryId {
-    handle: FrameHandle,
-    class: u32,
-}
-
-pub(crate) struct Component<S: Update> {
-    pub state: S,
-    pub dirty: bool,
-}
-
-impl<S: Update> Frame for Component<S> {}
-
-
-pub struct ComponentHandle<S: Update> {
-    pub(crate) index: usize,
-    pub(crate) component: Rc<Mutex<Component<S>>>,
-}
-impl<S: Update> ComponentHandle<S> {
-    pub(crate) fn new(index: usize, state: S) -> Self {
-        Self {
-            index,
-            component: Rc::new(Mutex::new(Component{
-                state: state,
-                dirty: true,
-            })),
         }
     }
 }
