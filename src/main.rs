@@ -31,8 +31,11 @@ impl Update for Div {
         }
    }
 }
+struct SubApp {
+    states: [ComponentHandle<Div>; 6],
+}
 struct App {
-     states: [ComponentHandle<Div>; 6],
+     states: [ComponentHandle<SubApp>; 6],
 }
 
 impl Update for App {
@@ -68,15 +71,50 @@ impl Update for App {
 
     }
     fn update(&mut self, msg: Self::Msg, frame: FrameHandle, manager: &mut UpdateManager) -> bool {
-        match msg {
-            Interaction::Click( down ) => {
-                self.states.iter().for_each(|div| {
-                    div.update(down, frame, manager)
-                });
-            },
-            _ => (),
+        let Interaction::Click(msg) = msg else {
+            return false;
         };
+        self.states.iter().for_each(|div| {
+            div.update(msg, frame, manager)
+        });
         false
+    }
+}
+
+impl Update for SubApp {
+    type Msg = bool;
+    fn init(frame: FrameHandle, manager: &mut UpdateManager) -> Self {
+        let mut g = manager.create_grid_in(frame);
+        let [x1, x2] = g
+            .widths()
+            .add(Ratio(0.2))
+            .add_expanding(Fraction(1))
+            .assign();
+        let [y1] = g
+            .heights()
+            .add(Fraction(1))
+            .assign();
+
+        let g = g.build(manager);
+        SubApp {
+            states: [
+                manager.add_frame(g, x1, y1),
+                manager.add_frame( g,x2, y1),
+                manager.add_frame(g, x2, y1),
+                manager.add_frame(g, x2, y1),
+                manager.add_frame(g, x2, y1),
+                manager.add_frame(g, x2, y1),
+            ],
+        } 
+    }
+    fn build(&self, frame: FrameHandle, manager: &mut UpdateManager) {
+
+    }
+    fn update(&mut self, msg: Self::Msg, frame: FrameHandle, manager: &mut UpdateManager) -> bool {
+        self.states.iter().for_each(|div| {
+            div.update(msg, frame, manager)
+        });
+    false
     }
 }
 

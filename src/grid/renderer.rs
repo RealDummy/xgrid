@@ -6,7 +6,8 @@ use crate::manager::BBox;
 
 use crate::handle::Handle;
 
-use super::{GridData, XName, YName};
+use super::{XName, YName};
+use crate::grid::data::GridData;
 use crate::handle::FallableHandleLike;
 
 pub struct GridRenderer {
@@ -22,8 +23,10 @@ impl GridRenderer {
     pub fn new(_device: &wgpu::Device, _config: &wgpu::SurfaceConfiguration) -> Self {
         Self { data: vec![] }
     }
-    pub fn prepare(&mut self, _queue: &wgpu::Queue) {
-        ()
+    pub fn prepare(&mut self, frame_renderer: &mut FrameRenderer, _queue: &wgpu::Queue) {
+        for g in &mut self.data {
+            g.update(frame_renderer);
+        }
     }
     // pub fn render<'rp>(&'rp self, _render_pass: &mut wgpu::RenderPass<'rp>) {
     //     ()
@@ -53,7 +56,7 @@ impl GridRenderer {
                 y.index()
             ),
         }
-        self.data[grid_handle.index()].update(frame_renderer);
+        //self.data[grid_handle.index()].update(frame_renderer);
     }
     pub fn add(&mut self, g: GridData) -> GridHandle {
         self.data.push(g);

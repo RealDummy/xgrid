@@ -39,9 +39,10 @@ fn vs_main(
     let xywh = calculate_margin(v.vertex_xywh, v.margin);
     let abs_pos = vec2<f32>(xywh.xy);
     let abs_dim = vec2<f32>(xywh.zw);
+    let wv = vec4<f32>(camera_array[0].xywh);
     let cam = vec4<f32>(camera_array[v.camera_index].xywh);
-    let rel_pos: vec2<f32> = (abs_pos + cam.xy) / cam.zw;
-    let rel_dim: vec2<f32> = abs_dim / cam.zw;
+    let rel_pos: vec2<f32> = (abs_pos + wv.xy) / (wv.zw);
+    let rel_dim: vec2<f32> = abs_dim / (wv.zw);
     out.clip_position = vec4<f32>( (((v.position / vec2<f32>(2.0, -2.0) + vec2<f32>(0.5, 0.5))  * rel_dim  + rel_pos) * vec2<f32>(2.0,-2.0) - vec2<f32>(1.0, -1.0)), 1.0,1.0);
     out.color = v.color;
     return out;

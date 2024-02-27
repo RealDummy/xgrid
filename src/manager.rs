@@ -294,7 +294,7 @@ impl<'a> UpdateManager<'a> {
         self.frame_renderer.update_color(frame_handle, color);
     }
     pub fn prepare(&mut self) {
-        self.grid_renderer.prepare(&self.queue);
+        self.grid_renderer.prepare(&mut self.frame_renderer,&self.queue);
         self.frame_renderer.prepare(&self.queue);
     }
     pub fn get_frame_data<'b>(&'b mut self, handle: FrameHandle) -> &'b mut FrameData {
