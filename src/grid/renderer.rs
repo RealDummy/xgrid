@@ -1,20 +1,17 @@
-use std::iter;
-
 use log::error;
 
 use crate::frame::{FrameHandle, FrameRenderer};
 use crate::handle::HandleLike;
 use crate::manager::BBox;
-use crate::units::{Fractiont, UserUnits};
-use crate::{handle::Handle};
 
-use super::{GridData, GridSpacer, SpacerUnit, XName, YName};
+use crate::handle::Handle;
+
+use super::{GridData, XName, YName};
 use crate::handle::FallableHandleLike;
 
 pub struct GridRenderer {
     data: Vec<GridData>,
 }
-
 
 #[derive(Clone, Copy, Default)]
 pub struct GridT {}
@@ -28,9 +25,9 @@ impl GridRenderer {
     pub fn prepare(&mut self, _queue: &wgpu::Queue) {
         ()
     }
-    pub fn render<'rp>(&'rp self, _render_pass: &mut wgpu::RenderPass<'rp>) {
-        ()
-    }
+    // pub fn render<'rp>(&'rp self, _render_pass: &mut wgpu::RenderPass<'rp>) {
+    //     ()
+    // }
     pub fn update(
         &mut self,
         grid_handle: GridHandle,
@@ -49,7 +46,12 @@ impl GridRenderer {
     ) {
         match self.data[grid_handle.index()].add_frame(frame_handle, x, y) {
             Ok(()) => (),
-            Err(()) => error!("couldn't add {} to grid at x:{:?} y:{:?}",frame_handle.index(), x.index(), y.index()),
+            Err(()) => error!(
+                "couldn't add {} to grid at x:{:?} y:{:?}",
+                frame_handle.index(),
+                x.index(),
+                y.index()
+            ),
         }
         self.data[grid_handle.index()].update(frame_renderer);
     }

@@ -1,12 +1,18 @@
-use std::{io::Seek, iter, sync::mpsc, thread::JoinHandle};
+use std::{arch::x86_64, iter, marker::PhantomData, rc::Rc, sync::{self, atomic::{AtomicUsize, Ordering}, mpsc, Arc, Mutex}, thread};
 
 use bytemuck::{Pod, Zeroable};
 use log::{debug, warn};
 use wgpu::{util::DeviceExt, SurfaceError};
-use winit::{dpi::LogicalSize, event::{ElementState, Event, KeyEvent, WindowEvent}, event_loop::{self, EventLoop}, keyboard::{Key, NamedKey}, window::{self, Window, WindowBuilder}};
+use winit::{
+    dpi::LogicalSize,
+    event::{ElementState, Event, KeyEvent, WindowEvent},
+    event_loop::EventLoop,
+    keyboard::{Key, NamedKey},
+    window::{Window, WindowBuilder},
+};
 
 use crate::{
-    frame::{FrameData, FrameHandle, FrameRenderer}, grid::{GridBuilder, GridData, GridHandle, GridRenderer, XName, YName}, handle::{Handle, HandleLike}, units::{UserUnits, VUnit}
+    component::{self, Component, Frame, QueryId, Update}, frame::{FrameData, FrameHandle, FrameRenderer}, grid::{GridBuilder, GridData, GridHandle, GridRenderer, XName, YName}, handle::{Handle, HandleLike}, units::{UserUnits, VUnit}, ComponentHandle, Interaction
 };
 
 const VERTICES: &[Vertex] = &[
@@ -59,8 +65,6 @@ impl Vertex {
         }
     }
 }
-
-
 
 pub type WorldView = BBox;
 
@@ -136,79 +140,20 @@ pub struct UpdateManager<'a> {
     grid_renderer: GridRenderer,
     frame_renderer: FrameRenderer,
     frame_to_grid_handle_map: Vec<Option<GridHandle>>,
+    components: Vec<Rc<Mutex<dyn Frame>>>,
     config: wgpu::SurfaceConfiguration,
     device: wgpu::Device,
     queue: wgpu::Queue,
 }
 
 
-pub type UpdateCycleId = u32;
-
 pub enum UpdateMessage {
-    FrameSize(UpdateCycleId,FrameHandle, BBox),
+    FrameSize(FrameHandle, BBox),
+    FrameColor(FrameHandle, [u8; 4]),
+    AddFrame(GridHandle, XName, YName),
+    AddGrid(GridBuilder),
 }
 
-#[derive(Clone, Copy)]
-pub struct Frame {
-    pub(crate) frame: FrameHandle,
-    pub(crate) window: WindowHandle,
-}
-
-impl Frame {
-    fn new(frame: FrameHandle, window: WindowHandle) -> Self {
-        Self {
-            frame,
-            window,
-        }
-    }
-    fn window(&self) -> usize {
-        self.window.index()
-    }
-}
-
-#[derive(Clone, Copy)]
-pub struct Grid {
-    pub(crate) grid: GridHandle,
-    pub(crate) window: WindowHandle,
-}
-
-impl Grid {
-    fn new(grid: GridHandle, window: WindowHandle) -> Self {
-        Self {
-            grid,
-            window,
-        }
-    }
-    fn window(&self) -> usize {
-        self.window.index()
-    }
-}
-
-// async fn create_window<'a>(event_loop: &EventLoop<()>, inner_size: winit::dpi::LogicalSize<u32>) -> LiveWindow<'a> {
-//         let window = winit::window::WindowBuilder::new()
-//         .with_inner_size(inner_size)
-//         .build(event_loop)
-//         .unwrap();
-
-//         let size = inner_size;
-
-//         // The instance is a handle to our GPU
-//         // BackendBit::PRIMARY => Vulkan + Metal + DX12 + Browser WebGPU
-        
-//         LiveWindow {
-//             window,
-//             surface,
-//             size,
-//             grid_renderer,
-//             frame_renderer,
-//             base_handle: window_handle,
-//             index_render_target,
-//             frame_to_grid_handle_map: vec![],
-//             config,
-//             device,
-//             queue,
-//         }
-// }
 
 impl<'a> UpdateManager<'a> {
     pub async fn new(window: &'a Window) -> Self {
@@ -226,7 +171,7 @@ impl<'a> UpdateManager<'a> {
             backends: wgpu::Backends::all(),
             ..Default::default()
         });
-        
+
         // # Safety
         //
         // The surface needs to live as long as the window that created it.
@@ -295,10 +240,11 @@ impl<'a> UpdateManager<'a> {
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::R32Uint,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_SRC,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                | wgpu::TextureUsages::TEXTURE_BINDING
+                | wgpu::TextureUsages::COPY_SRC,
             view_formats: &[],
         });
-
 
         let mut frame_renderer = FrameRenderer::new(&device, &config);
         let grid_renderer = GridRenderer::new(&device, &config);
@@ -313,7 +259,7 @@ impl<'a> UpdateManager<'a> {
             contents: bytemuck::cast_slice(VERTICES),
             usage: wgpu::BufferUsages::VERTEX,
         });
-         Self {
+        Self {
             size: size.cast(),
             vertex_buffer,
             index_render_target,
@@ -321,6 +267,7 @@ impl<'a> UpdateManager<'a> {
             window,
             grid_renderer,
             frame_to_grid_handle_map: vec![None],
+            components: vec![],
             base_handle: window_handle,
             frame_renderer,
             config,
@@ -328,22 +275,29 @@ impl<'a> UpdateManager<'a> {
             queue,
         }
     }
-    
-    pub fn update_frame(&mut self, frame_handle: Frame, size: BBox) {
-        self.frame_renderer.update(frame_handle.frame, &size);
-        if let Some(Some(grid_handle)) =
-            self.frame_to_grid_handle_map.get(frame_handle.frame.index())
+    pub fn window(&self) -> FrameHandle {
+        self.base_handle
+    }
+    pub fn update_frame(&mut self, frame_handle: FrameHandle, size: BBox) {
+        self.frame_renderer.update(frame_handle, &size);
+        if let Some(Some(grid_handle)) = self
+            .frame_to_grid_handle_map
+            .get(frame_handle.index())
         {
             debug!("grid update");
             self.grid_renderer
                 .update(*grid_handle, &size, &mut self.frame_renderer);
         }
     }
+    pub fn update_frame_color(&mut self, frame_handle: FrameHandle, color: [u8; 4]) {
+        debug!("color UPDATE");
+        self.frame_renderer.update_color(frame_handle, color);
+    }
     pub fn prepare(&mut self) {
         self.grid_renderer.prepare(&self.queue);
         self.frame_renderer.prepare(&self.queue);
     }
-    pub fn add_frame(&mut self, grid_handle: Grid, x: XName, y: YName) -> FrameHandle {
+    pub fn add_frame<S: Update + 'static>(&mut self, state: S, grid_handle: GridHandle, x: XName, y: YName) -> ComponentHandle<S> {
         self.frame_to_grid_handle_map.push(None);
         let fh = self.frame_renderer.add(FrameData {
             data: BBox::zeroed(),
@@ -355,19 +309,27 @@ impl<'a> UpdateManager<'a> {
             }
             .into(),
             color: [255, 255, 255, 25],
-            camera_index: self.grid_renderer.get_parent_handle(grid_handle.grid).index() as u32,
+            camera_index: self
+                .grid_renderer
+                .get_parent_handle(grid_handle)
+                .index() as u32,
         });
-        self.grid_renderer.add_frame(&mut self.frame_renderer, grid_handle.grid, fh, x, y);
-        return fh;
+        self.grid_renderer
+            .add_frame(&mut self.frame_renderer, grid_handle, fh, x, y);
+
+        let comp = ComponentHandle::new(self.components.len(), state);
+
+        self.components.push(comp.component.clone());
+        comp 
     }
-    pub fn create_grid_in(&mut self, parent_frame: Frame) -> GridBuilder {
+    pub fn create_grid_in(&mut self, parent_frame: FrameHandle) -> GridBuilder {
         GridBuilder::new(parent_frame)
     }
 
-    pub(crate) fn add_grid(&mut self, frame: Frame, grid: GridData) -> Grid {
+    pub(crate) fn add_grid(&mut self, frame: FrameHandle, grid: GridData) -> GridHandle {
         let grid_handle = self.grid_renderer.add(grid);
-        self.frame_to_grid_handle_map[frame.frame.index()] = Some(grid_handle);
-        return Grid::new(grid_handle, frame.window);
+        self.frame_to_grid_handle_map[frame.index()] = Some(grid_handle);
+        return grid_handle;
     }
 
     fn resize(&mut self, new_size: winit::dpi::LogicalSize<u32>) {
@@ -382,86 +344,93 @@ impl<'a> UpdateManager<'a> {
                 y: 0,
                 w: new_size.width as i32,
                 h: new_size.height as i32,
-            }.into();
-            let frame = Frame {
-                frame: self.base_handle,
-                window: WindowHandle::new(0),
-            };
-            self.update_frame(frame, cam);
+            }
+            .into();
+            self.update_frame(self.base_handle, cam);
         }
     }
 
     pub fn render(&mut self) -> Result<(), SurfaceError> {
-            self.prepare();
-            let output = self.surface.get_current_texture()?;
-            let view = output
-                .texture
+        self.prepare();
+        let output = self.surface.get_current_texture()?;
+        let view = output
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Render Encoder"),
+            });
+        {
+            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Render Pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color {
+                            r: 0.0,
+                            g: 0.0,
+                            b: 0.0,
+                            a: 1.0,
+                        }),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                occlusion_query_set: None,
+                timestamp_writes: None,
+            });
+            render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+            self.frame_renderer.render(&mut render_pass);
+        }
+        {
+            let index_view = self
+                .index_render_target
                 .create_view(&wgpu::TextureViewDescriptor::default());
-            let mut encoder = self.device
-                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                    label: Some("Render Encoder"),
-                });
-            {
-                let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: Some("Render Pass"),
-                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view: &view,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(wgpu::Color {
-                                r: 0.0,
-                                g: 0.0,
-                                b: 0.0,
-                                a: 1.0,
-                            }),
-                            store: wgpu::StoreOp::Store,
-                        },
-                    })],
-                    depth_stencil_attachment: None,
-                    occlusion_query_set: None,
-                    timestamp_writes: None,
-                });
-                render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-                self.frame_renderer.render(&mut render_pass);
-            }
-            {
-                let index_view = self.index_render_target.create_view(&wgpu::TextureViewDescriptor::default());
-                let mut index_render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: Some("Render Pass"),
-                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view: &index_view,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(wgpu::Color {
-                                r: 0.0,
-                                g: 0.0,
-                                b: 0.0,
-                                a: 1.0,
-                            }),
-                            store: wgpu::StoreOp::Store,
-                        },
-                    })],
-                    depth_stencil_attachment: None,
-                    occlusion_query_set: None,
-                    timestamp_writes: None,
-                });
-                index_render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-                self.frame_renderer.render_index(&mut index_render_pass);
-            }
-            self.queue.submit(iter::once(encoder.finish()));
-            output.present();
-            Ok(())
-
+            let mut index_render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Render Pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &index_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color {
+                            r: 0.0,
+                            g: 0.0,
+                            b: 0.0,
+                            a: 1.0,
+                        }),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                occlusion_query_set: None,
+                timestamp_writes: None,
+            });
+            index_render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+            self.frame_renderer.render_index(&mut index_render_pass);
+        }
+        self.queue.submit(iter::once(encoder.finish()));
+        output.present();
+        Ok(())
     }
-    fn input(&mut self, window_event: &WindowEvent) -> bool {
+    fn input(&mut self, _window_event: &WindowEvent) -> bool {
         false
     }
-
 }
 
+// fn update_all(manager: &mut UpdateManager, recv: mpsc::Receiver<UpdateMessage>) {
+//     for m in recv.iter() {
+//         match m {
+//             UpdateMessage::FrameSize(handle, size) => manager.update_frame(handle, size),
+//             UpdateMessage::AddFrame(grid_handle,x ,y ) => {manager.add_frame(grid_handle, x, y);},
+//             UpdateMessage::AddGrid(builder) => {builder.build(manager);},
+//             UpdateMessage::FrameColor(frame_handle, color) => (),
+//         }
+//     }
+// }
 
-
-pub async fn run() {
+pub async fn run<'a, App: Update<Msg = component::Interaction>>(mut app: App) {
     cfg_if::cfg_if! {
         if #[cfg(target_arch = "wasm32")] {
             std::panic::set_hook(Box::new(console_error_panic_hook::hook));
@@ -470,7 +439,6 @@ pub async fn run() {
             env_logger::builder().filter_level(log::LevelFilter::Error).filter_module("xgrid", log::LevelFilter::Trace).target(env_logger::Target::Stdout).init();
         }
     }
-
 
     #[cfg(target_arch = "wasm32")]
     {
@@ -494,18 +462,11 @@ pub async fn run() {
     let event_loop = EventLoop::new().unwrap();
 
     let window = WindowBuilder::new().build(&event_loop).unwrap();
-    let mut updates = UpdateManager::new(&window).await;
-    let mut g = updates.create_grid_in(Frame { frame: updates.base_handle, window: WindowHandle::new(0) });
-    let [x1,x2,x3] = g.widths().add(UserUnits::Pixel(100)).add(UserUnits::Ratio(0.2)).add_expanding(UserUnits::Fraction(1)).assign();
-    let [y1,y2,y3] = g.heights().add(UserUnits::Pixel(100)).add(UserUnits::Fraction(1)).add(UserUnits::Pixel(100)).assign();
-    let g = g.build(&mut updates);
-    updates.add_frame(g, x1, y1);
-    updates.add_frame(g, x2, y3);
-    updates.add_frame(g, x3, None);
-    updates.add_frame(g, x3, None);
-    updates.add_frame(g, x3, None);
-    updates.add_frame(g, x3, y3);
+    let mut updates: UpdateManager<'_> = UpdateManager::new(&window).await;
 
+    app.build(updates.window(), &mut updates);
+    
+    
     let exit_status = event_loop.run(move |event: Event<_>, target| {
         match event {
             Event::WindowEvent {
@@ -527,7 +488,7 @@ pub async fn run() {
                         WindowEvent::Resized(physical_size) => {
                             updates.resize(physical_size.to_logical(1.0));
                         }
-                        WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
+                        WindowEvent::ScaleFactorChanged { .. } => {
                             ()
                             //self.scale(*scale_factor);
                         }
@@ -545,6 +506,9 @@ pub async fn run() {
                             }
                             updates.window.request_redraw();
                         }
+                        WindowEvent::MouseInput { state, .. } => {
+                            app.update(Interaction::Click(matches!(state, ElementState::Pressed)))
+                        }
                         _ => {}
                     }
                 }
@@ -556,3 +520,46 @@ pub async fn run() {
         warn!("{e}")
     };
 }
+
+// pub struct Updater {
+//     send: mpsc::Sender<UpdateMessage>,
+//     barrier: Arc<std::sync::Barrier>,
+//     next_frame: AtomicUsize,
+//     next_grid: AtomicUsize,
+
+// }
+
+// impl Updater {
+//     pub fn new() -> Self {
+//         let (send, recv) = mpsc::channel();
+//         let barrier = Arc::new(sync::Barrier::new(2));
+//         let barr = barrier.clone();
+//         thread::spawn(move ||{
+//             pollster::block_on(run(barr, recv));
+//         });
+//         Self {
+//             send,
+//             barrier,
+//             next_frame: AtomicUsize::new(1),
+//             next_grid: AtomicUsize::new(1),
+//         }
+//     }
+//     pub fn add_frame(&self, grid_handle: GridHandle, x: XName, y: YName) -> FrameHandle {
+//         let res = FrameHandle::new(
+//             self.next_frame.fetch_add(1, Ordering::AcqRel)
+//         );
+//         self.send.send(UpdateMessage::AddFrame(grid_handle, x, y));
+//         res
+//     }
+//     pub fn new_grid(&self, parent: FrameHandle) -> GridBuilder{
+//         GridBuilder::new(parent)
+//     }
+//     pub fn add_grid(&self, grid_builder: GridBuilder) -> GridHandle {
+//         let res = GridHandle::new(
+//             self.next_grid.fetch_add(1, Ordering::AcqRel)
+//         );
+//         self.send.send(UpdateMessage::AddGrid(grid_builder));
+//         res
+//     }
+
+// }

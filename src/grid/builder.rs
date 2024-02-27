@@ -1,10 +1,7 @@
 use std::marker::PhantomData;
 
 use crate::{
-    frame::FrameHandle,
-    handle::{FallableHandleLike, Handle, HandleLike},
-    manager::{Frame, Grid, UpdateManager},
-    units::UserUnits,
+    frame::FrameHandle, handle::{FallableHandleLike, Handle, HandleLike}, manager::UpdateManager, units::UserUnits
 };
 
 use super::{data::GridExpandDir, GridHandle};
@@ -56,7 +53,7 @@ pub(crate) type GridSpacer = Vec<SpacerUnit>;
 pub struct GridBuilder {
     spacers: [GridSpacer; 2],
     expands: Option<GridExpandDir>,
-    parent: Frame,
+    parent: FrameHandle,
 }
 
 pub struct SpacerBuilder<'b, const EXPANDS: bool, T: Dir + FallableHandleLike> {
@@ -113,7 +110,7 @@ pub type WidthSpacerBuilder<'a, const EXPANDS: bool> = SpacerBuilder<'a, EXPANDS
 pub type HeightSpacerBuilder<'a, const EXPANDS: bool> = SpacerBuilder<'a, EXPANDS, YName>;
 
 impl GridBuilder {
-    pub fn new(parent: Frame) -> GridBuilder {
+    pub fn new(parent: FrameHandle) -> GridBuilder {
         GridBuilder {
             spacers: [GridSpacer::new(), GridSpacer::new()],
             expands: None,
@@ -126,14 +123,12 @@ impl GridBuilder {
     pub fn heights(&mut self) -> HeightSpacerBuilder<false> {
         HeightSpacerBuilder::new(self)
     }
-    pub fn build(self, manager: &mut UpdateManager) -> Grid {
+    pub fn build(self, manager: &mut UpdateManager) -> GridHandle {
         let parent_handle = self.parent.clone();
         let [x_spacer, y_spacer] = self.spacers;
-        manager.add_grid(self.parent, crate::grid::GridData::new(
-            parent_handle.frame,
-            x_spacer,
-            y_spacer,
-            self.expands,
-        ))
+        manager.add_grid(
+            self.parent,
+            crate::grid::GridData::new(parent_handle, x_spacer, y_spacer, self.expands),
+        )
     }
 }

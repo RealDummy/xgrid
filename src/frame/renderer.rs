@@ -9,7 +9,8 @@ use wgpu::{
 };
 
 use crate::{
-    handle::{Handle, HandleLike}, manager::{BBox, Vertex},
+    handle::{Handle, HandleLike},
+    manager::{BBox, Vertex},
 };
 
 use super::FrameData;
@@ -72,7 +73,7 @@ impl FrameRenderer {
             push_constant_ranges: &[],
         };
         let pipeline_layout = device.create_pipeline_layout(&pipeline_layout_descriptor);
-        
+
         let color_targets = [Some(wgpu::ColorTargetState {
             format: config.format,
             blend: Some(wgpu::BlendState::ALPHA_BLENDING),
@@ -108,7 +109,8 @@ impl FrameRenderer {
             bind_group_layouts: &[&camera_bg_layout],
             push_constant_ranges: &[],
         };
-        let index_pipeline_layout = device.create_pipeline_layout(&index_pipeline_layout_descriptor);
+        let index_pipeline_layout =
+            device.create_pipeline_layout(&index_pipeline_layout_descriptor);
 
         let index_color_targets = [Some(wgpu::ColorTargetState {
             format: wgpu::TextureFormat::R32Uint,
@@ -178,7 +180,7 @@ impl FrameRenderer {
         render_pass.set_bind_group(0, &self.camera_bg_handle, &[]);
         render_pass.draw(0..4 as u32, 0..self.data.len() as u32);
     }
-    
+
     pub fn render_index<'rp>(&'rp self, render_pass: &mut RenderPass<'rp>) {
         //debug!("frames: {:?}", self.data);
         render_pass.set_pipeline(&self.index_pipeline);
@@ -197,6 +199,15 @@ impl FrameRenderer {
         let frame = &mut self.data[handle.index()];
         frame.data = *bounds;
         self.camera_data[handle.index()].bbox = *bounds;
+        self.changed = match self.changed {
+            None => Some(handle.index()),
+            Some(u) => Some(usize::max(u, handle.index())),
+        }
+    }
+    pub fn update_color(&mut self, handle: FrameHandle, color: [u8; 4]) {
+        debug!("HERE");
+        let frame = &mut self.data[handle.index()];
+        frame.color = color;
         self.changed = match self.changed {
             None => Some(handle.index()),
             Some(u) => Some(usize::max(u, handle.index())),
