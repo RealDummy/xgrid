@@ -124,11 +124,9 @@ impl GridBuilder {
         HeightSpacerBuilder::new(self)
     }
     pub fn build(self, manager: &mut UpdateManager) -> GridHandle {
-        let parent_handle = self.parent.clone();
-        let [x_spacer, y_spacer] = self.spacers;
         manager.add_grid(
             self.parent,
-            crate::grid::GridData::new(parent_handle, x_spacer, y_spacer, self.expands),
+            self,
         )
     }
 }

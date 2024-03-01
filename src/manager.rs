@@ -1,18 +1,18 @@
-use std::{iter, marker::PhantomData, rc::Rc, sync::{self, atomic::{AtomicUsize, Ordering}, mpsc, Arc, Mutex}, thread};
+use std::{default, iter, marker::PhantomData, mem::MaybeUninit, rc::{self, Rc}, sync::{self, atomic::{AtomicUsize, Ordering}, mpsc, Arc, Condvar, Mutex}, thread::{self, scope, ScopedJoinHandle}};
 
 use bytemuck::{Pod, Zeroable};
 use log::{debug, warn};
-use wgpu::{util::DeviceExt, SurfaceError};
+use wgpu::{util::DeviceExt, Queue, RenderPass, SurfaceError};
 use winit::{
     dpi::LogicalSize,
     event::{ElementState, Event, KeyEvent, WindowEvent},
-    event_loop::EventLoop,
+    event_loop::{EventLoop, EventLoopWindowTarget},
     keyboard::{Key, NamedKey},
     window::{Window, WindowBuilder},
 };
 
 use crate::{
-    component::{self, Component, Frame, QueryId, Update}, frame::{FrameData, FrameHandle, FrameRenderer}, grid::{GridBuilder, GridData, GridHandle, GridRenderer, XName, YName}, handle::{Handle, HandleLike}, manager, units::{UserUnits, VUnit}, ComponentHandle, Interaction, UpdateComponent
+    component::{self, Component, Frame, QueryId, Update}, frame::{FrameData, FrameHandle, FrameRenderer}, grid::{GridBuilder, GridData, GridHandle, GridRenderer, XName, YName}, handle::{Handle, HandleLike}, manager, render_actor::{FrameMessage, RenderActor, UpdateMessage}, units::{UserUnits, VUnit}, ComponentHandle, Interaction, UpdateComponent
 };
 
 const VERTICES: &[Vertex] = &[
@@ -137,26 +137,20 @@ pub struct UpdateManager<'a> {
     size: winit::dpi::PhysicalSize<u32>,
     index_render_target: wgpu::Texture,
     base_handle: FrameHandle,
-    grid_renderer: GridRenderer,
-    frame_renderer: FrameRenderer,
+    renderer: RenderActor,
     frame_to_grid_handle_map: Vec<Option<GridHandle>>,
-    components: Vec<Rc<Mutex<dyn Frame>>>,
+    grid_count: usize,
     config: wgpu::SurfaceConfiguration,
     device: wgpu::Device,
-    queue: wgpu::Queue,
+    queue: Arc<wgpu::Queue>,
+    pair: Arc<(Mutex<Option<RenderPass<'a>>>, Condvar)>,
 }
 
 
-pub enum UpdateMessage {
-    FrameSize(FrameHandle, BBox),
-    FrameColor(FrameHandle, [u8; 4]),
-    AddFrame(GridHandle, XName, YName),
-    AddGrid(GridBuilder),
-}
 
 
 impl<'a> UpdateManager<'a> {
-    pub async fn new<App: Update + 'static>(window: &'a Window) -> (Self, ComponentHandle<App>) {
+    pub async fn new<App: Update>(window: &'a Window) -> (Self, ComponentHandle<App>) {
         let size = LogicalSize::<i32> {
             width: 400,
             height: 400,
@@ -246,33 +240,30 @@ impl<'a> UpdateManager<'a> {
             view_formats: &[],
         });
 
-        let mut frame_renderer = FrameRenderer::new(&device, &config);
-        let grid_renderer = GridRenderer::new(&device, &config);
-        let window_handle = frame_renderer.add(FrameData {
-            data: world_view,
-            margin: MarginBox::zeroed(),
-            color: [255, 255, 255, 30],
-            camera_index: 0,
-        });
+        let window_handle = FrameHandle::new(0);
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Vertex Buffer"),
             contents: bytemuck::cast_slice(VERTICES),
             usage: wgpu::BufferUsages::VERTEX,
         });
+        let pair = Arc::new((Mutex::new(None), Condvar::new()));
+        let queue = Arc::new(queue);
+        let renderer =RenderActor::new(&device, &config);
         let mut manager = Self {
             size: size.cast(),
             vertex_buffer,
             index_render_target,
             surface,
             window,
-            grid_renderer,
+            renderer,
             frame_to_grid_handle_map: vec![None],
-            components: vec![],
+            // components: vec![],
             base_handle: window_handle,
-            frame_renderer,
             config,
             device,
             queue,
+            grid_count: 0,
+            pair,
         };
         let app = ComponentHandle::new(window_handle, App::init(window_handle, &mut manager));
         return (manager, app);
@@ -280,58 +271,50 @@ impl<'a> UpdateManager<'a> {
     pub fn window(&self) -> FrameHandle {
         self.base_handle
     }
-    pub fn update_frame(&mut self, frame_handle: FrameHandle, size: BBox) {
-        self.frame_renderer.update(frame_handle, &size);
-        if let Some(Some(grid_handle)) = self
-            .frame_to_grid_handle_map
-            .get(frame_handle.index())
-        {
-            self.grid_renderer
-                .update(*grid_handle, &size, &mut self.frame_renderer);
-        }
+    pub fn update_frame(&self, frame_handle: FrameHandle, size: BBox) {
+        self.renderer.send(UpdateMessage::ModifyFrame(frame_handle, FrameMessage {
+            size: Some(size),
+            color: None,
+            margin: None,
+        }));
     }
-    pub fn update_frame_color(&mut self, frame_handle: FrameHandle, color: [u8; 4]) {
-        self.frame_renderer.update_color(frame_handle, color);
+    pub fn update_frame_color(&self, frame_handle: FrameHandle, color: [u8; 4]) {
+        self.renderer.send(UpdateMessage::ModifyFrame(frame_handle, FrameMessage {
+            size: None,
+            color: Some(color),
+            margin: None,
+        }));
     }
-    pub fn prepare(&mut self) {
-        self.grid_renderer.prepare(&mut self.frame_renderer,&self.queue);
-        self.frame_renderer.prepare(&self.queue);
+    pub fn prepare(&'a self) {
+        self.renderer.send(UpdateMessage::Prepare(Arc::clone(&self.queue)));
     }
-    pub fn get_frame_data<'b>(&'b mut self, handle: FrameHandle) -> &'b mut FrameData {
-        self.frame_renderer.get(handle)
-    }
-    pub fn add_frame<S: Update + 'static>(&mut self, grid_handle: GridHandle, x: XName, y: YName) -> ComponentHandle<S> {
+    pub fn add_frame<S: Update>(&mut self, grid_handle: GridHandle, x: XName, y: YName) -> ComponentHandle<S> {
         self.frame_to_grid_handle_map.push(None);
-        let fh = self.frame_renderer.add(FrameData {
-            data: BBox::zeroed(),
-            margin: Borders {
+        let fh = self.renderer.send(UpdateMessage::NewFrame(FrameMessage {
+            size: Some(BBox::zeroed()),
+            margin: Some(Borders {
                 top: 10,
                 bottom: 10,
                 left: 10,
                 right: 10,
-            }
-            .into(),
-            color: [255, 255, 255, 25],
-            camera_index: self
-                .grid_renderer
-                .get_parent_handle(grid_handle)
-                .index() as u32,
-        });
-        self.grid_renderer
-            .add_frame(&mut self.frame_renderer, grid_handle, fh, x, y);
-
+            }.into()),
+            color: Some([255, 255, 255, 25])
+        }));
+        let fh = FrameHandle::new(self.frame_to_grid_handle_map.len() - 1);
         let comp = ComponentHandle::new(fh, S::init(fh, self));
 
-        self.components.push(comp.as_frame());
-        comp 
+        // self.components.push(comp.as_frame());
+        comp
     }
     pub fn create_grid_in(&mut self, parent_frame: FrameHandle) -> GridBuilder {
         GridBuilder::new(parent_frame)
     }
 
-    pub(crate) fn add_grid(&mut self, frame: FrameHandle, grid: GridData) -> GridHandle {
-        let grid_handle = self.grid_renderer.add(grid);
+    pub(crate) fn add_grid(&mut self, frame: FrameHandle, grid: GridBuilder) -> GridHandle {
+        self.renderer.send(UpdateMessage::NewGrid(grid));
+        let grid_handle = GridHandle::new(self.grid_count);
         self.frame_to_grid_handle_map[frame.index()] = Some(grid_handle);
+        self.grid_count += 1;
         return grid_handle;
     }
 
@@ -353,7 +336,7 @@ impl<'a> UpdateManager<'a> {
         }
     }
 
-    pub fn render(&mut self) -> Result<(), SurfaceError> {
+    pub fn render(&'a self) -> Result<(), SurfaceError> {
         self.prepare();
         let output = self.surface.get_current_texture()?;
         let view = output
@@ -385,7 +368,8 @@ impl<'a> UpdateManager<'a> {
                 timestamp_writes: None,
             });
             render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-            self.frame_renderer.render(&mut render_pass);
+            
+
         }
         {
             let index_view = self
@@ -410,30 +394,19 @@ impl<'a> UpdateManager<'a> {
                 occlusion_query_set: None,
                 timestamp_writes: None,
             });
-            index_render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-            self.frame_renderer.render_index(&mut index_render_pass);
+            index_render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));  
         }
         self.queue.submit(iter::once(encoder.finish()));
         output.present();
         Ok(())
     }
-    fn input(&mut self, _window_event: &WindowEvent) -> bool {
+    fn input(&self, _window_event: &WindowEvent) -> bool {
         false
     }
 }
 
-// fn update_all(manager: &mut UpdateManager, recv: mpsc::Receiver<UpdateMessage>) {
-//     for m in recv.iter() {
-//         match m {
-//             UpdateMessage::FrameSize(handle, size) => manager.update_frame(handle, size),
-//             UpdateMessage::AddFrame(grid_handle,x ,y ) => {manager.add_frame(grid_handle, x, y);},
-//             UpdateMessage::AddGrid(builder) => {builder.build(manager);},
-//             UpdateMessage::FrameColor(frame_handle, color) => (),
-//         }
-//     }
-// }
 
-pub async fn run<'a, App: Update<Msg = component::Interaction> + 'static>() {
+pub async fn run<'a, App: Update<Msg = component::Interaction>>() {
     cfg_if::cfg_if! {
         if #[cfg(target_arch = "wasm32")] {
             std::panic::set_hook(Box::new(console_error_panic_hook::hook));
@@ -468,7 +441,8 @@ pub async fn run<'a, App: Update<Msg = component::Interaction> + 'static>() {
     let (mut updates, app) = UpdateManager::new::<App>(&window).await;
     
     
-    let exit_status = event_loop.run(move |event: Event<_>, target| {
+    thread::scope(|s|{
+    let exit_status = event_loop.run(move |event: Event<_>, target: &EventLoopWindowTarget<_>| {
         match event {
             Event::WindowEvent {
                 ref event,
@@ -494,7 +468,10 @@ pub async fn run<'a, App: Update<Msg = component::Interaction> + 'static>() {
                             //self.scale(*scale_factor);
                         }
                         WindowEvent::RedrawRequested => {
-                            match updates.render() {
+                            let res = {
+                                Ok(())//updates.render()
+                            };
+                            match res {
                                 Ok(_) => {}
                                 // Reconfigure the surface if it's lost or outdated
                                 Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
@@ -520,6 +497,7 @@ pub async fn run<'a, App: Update<Msg = component::Interaction> + 'static>() {
     if let Err(e) = exit_status {
         warn!("{e}")
     };
+    });
 }
 
 // pub struct Updater {

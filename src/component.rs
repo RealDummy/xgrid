@@ -49,7 +49,7 @@ impl<S: Update> Frame for Component<S> {}
 pub struct ComponentHandle<S: Update> {
     component: Rc<Mutex<Component<S>>>,
 }
-impl<S: Update + 'static> ComponentHandle<S> {
+impl<S: Update> ComponentHandle<S> {
     pub(super) fn new(frame: FrameHandle, state: S) -> Self {
         Self {
             component: Rc::new(Mutex::new(Component{
@@ -62,9 +62,9 @@ impl<S: Update + 'static> ComponentHandle<S> {
             })),
         }
     }
-    pub(super) fn as_frame(&self) -> Rc<Mutex<dyn Frame>> {
-        self.component.clone()
-    }
+    // pub(super) fn as_frame(&self) -> Rc<Mutex<dyn Frame>> {
+    //     self.component.clone()
+    // }
 }
 
 impl<S: Update> UpdateComponent for ComponentHandle<S> {

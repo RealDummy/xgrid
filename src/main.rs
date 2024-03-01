@@ -21,7 +21,7 @@ impl Update for Div {
         }
     }
     fn build(&self, frame: FrameHandle, manager: &mut UpdateManager) {
-        manager.get_frame_data(frame ).color = if self.down {Div::DC} else {Div::UC}
+        // manager.get_frame_data(frame ).color = if self.down {Div::DC} else {Div::UC}
     }
     fn update(&mut self, msg: Self::Msg, frame: FrameHandle, manager: &mut UpdateManager) -> bool{
         return {

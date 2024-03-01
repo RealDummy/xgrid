@@ -10,6 +10,7 @@ pub(crate) mod handle;
 pub(crate) mod manager;
 pub(crate) mod message;
 pub(crate) mod units;
+pub(crate) mod render_actor;
 
 pub use component::{Update, UpdateComponent, Interaction, ComponentHandle};
 pub use manager::{run, UpdateManager};
