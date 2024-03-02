@@ -1,38 +1,33 @@
 use log::debug;
 use xgrid::*;
 
-
-
-
 #[derive(Clone, Copy, Debug)]
 struct Div {
     down: bool,
 }
 impl Div {
-    const UC: [u8; 4] = [100;4];
+    const UC: [u8; 4] = [100; 4];
     const DC: [u8; 4] = [50; 4];
 }
 
 impl Update for Div {
     type Msg = bool;
     fn init() -> Self {
-        Self {
-            down: false,
-        }
+        Self { down: false }
     }
     fn build(&self) {
         // manager.get_frame_data(frame ).color = if self.down {Div::DC} else {Div::UC}
     }
-    fn update(&mut self, msg: Self::Msg) -> bool{
+    fn update(&mut self, msg: Self::Msg) -> bool {
         return {
             let res = msg != self.down;
             self.down = msg;
             res
-        }
-   }
+        };
+    }
 }
 struct App {
-     states: [ComponentHandle<Div>; 6],
+    states: [ComponentHandle<Div>; 6],
 }
 
 impl Update for App {
@@ -40,9 +35,7 @@ impl Update for App {
     fn init() -> Self {
         todo!()
     }
-    fn build(&self) {
-
-    }
+    fn build(&self) {}
     fn update(&mut self, msg: Self::Msg) -> bool {
         todo!()
     }

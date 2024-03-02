@@ -2,8 +2,12 @@ use std::{borrow::BorrowMut, clone, fmt::Debug, marker::PhantomData, rc::Rc, syn
 
 use log::{debug, warn};
 
-use crate::{frame::{FrameData, FrameHandle}, handle::HandleLike, manager::UpdateManager, render_actor::UpdateMessage};
-
+use crate::{
+    frame::{FrameData, FrameHandle},
+    handle::HandleLike,
+    manager::UpdateManager,
+    render_actor::UpdateMessage,
+};
 
 pub enum UpdateAction {
     Rebuild,
@@ -16,17 +20,13 @@ pub trait Update {
     fn init() -> Self;
 }
 
-
 #[derive(Debug)]
 pub enum Interaction {
     Click(bool),
     Hover,
 }
 
-pub trait Frame {
-    
-}
-
+pub trait Frame {}
 
 pub struct QueryId {
     handle: FrameHandle,
@@ -45,7 +45,6 @@ pub struct ComponentHandle<S: Update> {
     state_index: usize,
     frame_index: FrameHandle,
     _t: PhantomData<S>,
-    
 }
 impl<S: Update> ComponentHandle<S> {
     pub(super) fn new(state: S) -> Self {

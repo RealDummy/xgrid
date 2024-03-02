@@ -140,7 +140,11 @@ impl GridData {
     }
     pub fn update(&mut self, frames: &mut FrameRenderer) {
         let parent_box = frames.get(self.parent_frame_handle).data;
-        debug!("grid {} box {:?}",self.parent_frame_handle.index(), parent_box);
+        debug!(
+            "grid {} box {:?}",
+            self.parent_frame_handle.index(),
+            parent_box
+        );
         self.handles.sort_by_key(|h| (h.major, h.cross));
         let BBox {
             x: major_pos,
@@ -196,7 +200,7 @@ impl GridData {
                     .by_ref()
                     .take(solve.count.min(1))
                     .for_each(|loc| {
-                        debug!("frame: {} {:?}",loc.handle.index(), bounds);
+                        debug!("frame: {} {:?}", loc.handle.index(), bounds);
                         //debug!("frame {}: {:?} {}", loc.handle.index(), bounds, solve.count);
                         frames.update(loc.handle, &bounds);
                     })

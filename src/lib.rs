@@ -9,10 +9,10 @@ pub(crate) mod grid;
 pub(crate) mod handle;
 pub(crate) mod manager;
 pub(crate) mod message;
-pub(crate) mod units;
 pub(crate) mod render_actor;
+pub(crate) mod units;
 
-pub use component::{Update, Interaction, ComponentHandle};
+pub use component::{ComponentHandle, Interaction, Update};
+pub use frame::{FrameData, FrameHandle};
 pub use manager::{run, UpdateManager};
 pub use units::UserUnits::*;
-pub use frame::{FrameHandle, FrameData};

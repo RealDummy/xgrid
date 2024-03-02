@@ -1,7 +1,10 @@
 use std::marker::PhantomData;
 
 use crate::{
-    frame::FrameHandle, handle::{FallableHandleLike, Handle, HandleLike}, manager::UpdateManager, units::UserUnits
+    frame::FrameHandle,
+    handle::{FallableHandleLike, Handle, HandleLike},
+    manager::UpdateManager,
+    units::UserUnits,
 };
 
 use super::{data::GridExpandDir, GridHandle};

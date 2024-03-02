@@ -173,7 +173,7 @@ impl FrameRenderer {
 
         self.changed = None;
     }
-    pub fn render<'a: 'rp,'rp>(&'a self, render_pass: &mut RenderPass<'rp>) {
+    pub fn render<'a: 'rp, 'rp>(&'a self, render_pass: &mut RenderPass<'rp>) {
         //debug!("frames: {:?}", self.data);
         render_pass.set_pipeline(&self.pipeline);
         render_pass.set_vertex_buffer(1, self.frame_buffer_handle.slice(..));

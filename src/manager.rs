@@ -1,4 +1,15 @@
-use std::{default, iter, marker::PhantomData, mem::MaybeUninit, rc::{self, Rc}, sync::{self, atomic::{AtomicUsize, Ordering}, mpsc, Arc, Condvar, Mutex}, thread::{self, scope, ScopedJoinHandle}};
+use std::{
+    default, iter,
+    marker::PhantomData,
+    mem::MaybeUninit,
+    rc::{self, Rc},
+    sync::{
+        self,
+        atomic::{AtomicUsize, Ordering},
+        mpsc, Arc, Condvar, Mutex,
+    },
+    thread::{self, scope, ScopedJoinHandle},
+};
 
 use bytemuck::{Pod, Zeroable};
 use log::{debug, warn};
@@ -12,7 +23,14 @@ use winit::{
 };
 
 use crate::{
-    component::{self, Component, Frame, QueryId, Update}, frame::{FrameData, FrameHandle, FrameRenderer}, grid::{GridBuilder, GridData, GridHandle, GridRenderer, XName, YName}, handle::{Handle, HandleLike}, manager, render_actor::{FrameMessage, UpdateMessage}, units::{UserUnits, VUnit}, ComponentHandle, Interaction
+    component::{self, Component, Frame, QueryId, Update},
+    frame::{FrameData, FrameHandle, FrameRenderer},
+    grid::{GridBuilder, GridData, GridHandle, GridRenderer, XName, YName},
+    handle::{Handle, HandleLike},
+    manager,
+    render_actor::{FrameMessage, UpdateMessage},
+    units::{UserUnits, VUnit},
+    ComponentHandle, Interaction,
 };
 
 const VERTICES: &[Vertex] = &[
@@ -144,18 +162,16 @@ pub struct UpdateManager<'a, App: Update> {
     queue: wgpu::Queue,
     frame_renderer: FrameRenderer,
     grid_renderer: GridRenderer,
-    app: ComponentHandle<App>
+    app: ComponentHandle<App>,
 }
-
-
-
 
 impl<'a, App: Update> UpdateManager<'a, App> {
     pub async fn new(window: &'a Window, recv: mpsc::Receiver<UpdateMessage>) -> Self {
         let size = LogicalSize::<i32> {
             width: 400,
             height: 400,
-        }.to_physical(window.scale_factor());
+        }
+        .to_physical(window.scale_factor());
         let world_view = WorldView {
             x: 0.into(),
             y: 0.into(),
@@ -271,7 +287,7 @@ impl<'a, App: Update> UpdateManager<'a, App> {
     pub fn window(&self) -> FrameHandle {
         self.base_handle
     }
-    
+
     // pub fn add_frame<S: Update>(&mut self, grid_handle: GridHandle, x: XName, y: YName) -> ComponentHandle<S> {
     //     self.frame_to_grid_handle_map.push(None);
     //     let fh = self.render_sender.send(UpdateMessage::NewFrame(FrameMessage {
@@ -352,8 +368,6 @@ impl<'a, App: Update> UpdateManager<'a, App> {
                 timestamp_writes: None,
             });
             render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-            
-
         }
         {
             let index_view = self
@@ -378,7 +392,7 @@ impl<'a, App: Update> UpdateManager<'a, App> {
                 occlusion_query_set: None,
                 timestamp_writes: None,
             });
-            index_render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));  
+            index_render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
         }
         self.queue.submit(iter::once(encoder.finish()));
         output.present();
@@ -387,11 +401,8 @@ impl<'a, App: Update> UpdateManager<'a, App> {
     fn input(&self, _window_event: &WindowEvent) -> bool {
         false
     }
-    pub fn run_forever(self) {
-
-    }
+    pub fn run_forever(self) {}
 }
-
 
 pub fn run<App: Update<Msg = component::Interaction> + Send>() {
     cfg_if::cfg_if! {
@@ -425,66 +436,65 @@ pub fn run<App: Update<Msg = component::Interaction> + Send>() {
 
     let window = WindowBuilder::new().build(&event_loop).unwrap();
     let (send, recv) = mpsc::channel();
-    thread::scope(|s|{
+    thread::scope(|s| {
         let updates = pollster::block_on(UpdateManager::<App>::new(&window, recv));
         s.spawn(move || {
             updates.run_forever();
         });
-    
-    
-    let exit_status = event_loop.run(move |event: Event<_>, target: &EventLoopWindowTarget<_>| {
-        match event {
-            Event::WindowEvent {
-                ref event,
-                window_id,
-            } => {
-                    match event {
-                        WindowEvent::CloseRequested
-                        | WindowEvent::KeyboardInput {
-                            event:
-                                KeyEvent {
-                                    state: ElementState::Pressed,
-                                    logical_key: Key::Named(NamedKey::Escape),
-                                    ..
-                                },
-                            ..
-                        } => target.exit(),
-                        WindowEvent::Resized(physical_size) => {
-                            
-                        }
-                        WindowEvent::ScaleFactorChanged { .. } => {
-                            ()
-                            //self.scale(*scale_factor);
-                        }
-                        WindowEvent::RedrawRequested => {
-                            let res = {
-                                Ok(())//updates.render()
-                            };
-                            match res {
-                                Ok(_) => {}
-                                // Reconfigure the surface if it's lost or outdated
-                                Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
-                                    
-                                }
-                                // The system is out of memory, we should probably quit
-                                Err(wgpu::SurfaceError::OutOfMemory) => target.exit(),
-                                // We're ignoring timeouts
-                                Err(wgpu::SurfaceError::Timeout) => log::warn!("Surface timeout"),
+
+        let exit_status =
+            event_loop.run(move |event: Event<_>, target: &EventLoopWindowTarget<_>| {
+                match event {
+                    Event::WindowEvent {
+                        ref event,
+                        window_id,
+                    } => {
+                        match event {
+                            WindowEvent::CloseRequested
+                            | WindowEvent::KeyboardInput {
+                                event:
+                                    KeyEvent {
+                                        state: ElementState::Pressed,
+                                        logical_key: Key::Named(NamedKey::Escape),
+                                        ..
+                                    },
+                                ..
+                            } => target.exit(),
+                            WindowEvent::Resized(physical_size) => {}
+                            WindowEvent::ScaleFactorChanged { .. } => {
+                                ()
+                                //self.scale(*scale_factor);
                             }
-                            //updates.window.request_redraw();
+                            WindowEvent::RedrawRequested => {
+                                let res = {
+                                    Ok(()) //updates.render()
+                                };
+                                match res {
+                                    Ok(_) => {}
+                                    // Reconfigure the surface if it's lost or outdated
+                                    Err(
+                                        wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated,
+                                    ) => {}
+                                    // The system is out of memory, we should probably quit
+                                    Err(wgpu::SurfaceError::OutOfMemory) => target.exit(),
+                                    // We're ignoring timeouts
+                                    Err(wgpu::SurfaceError::Timeout) => {
+                                        log::warn!("Surface timeout")
+                                    }
+                                }
+                                //updates.window.request_redraw();
+                            }
+                            WindowEvent::MouseInput { state, .. } => {
+                                //app.update(Interaction::Click(matches!(state, ElementState::Pressed)), updates.window(), &mut updates);
+                            }
+                            _ => {}
                         }
-                        WindowEvent::MouseInput { state, .. } => {
-                            //app.update(Interaction::Click(matches!(state, ElementState::Pressed)), updates.window(), &mut updates);
-                        }
-                        _ => {}
                     }
-                
-            }
-            _ => {}
-        }
-    });
-    if let Err(e) = exit_status {
-        warn!("{e}")
-    };
+                    _ => {}
+                }
+            });
+        if let Err(e) = exit_status {
+            warn!("{e}")
+        };
     });
 }
