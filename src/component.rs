@@ -1,12 +1,9 @@
-use std::{borrow::BorrowMut, clone, fmt::Debug, marker::PhantomData, rc::Rc, sync::Mutex};
+use std::{fmt::Debug, marker::PhantomData};
 
-use log::{debug, warn};
+
 
 use crate::{
-    frame::{FrameData, FrameHandle},
-    handle::HandleLike,
-    manager::UpdateManager,
-    render_actor::UpdateMessage,
+    frame::{FrameHandle},
 };
 
 pub enum UpdateAction {
@@ -47,7 +44,7 @@ pub struct ComponentHandle<S: Update> {
     _t: PhantomData<S>,
 }
 impl<S: Update> ComponentHandle<S> {
-    pub(super) fn new(state: S) -> Self {
+    pub(super) fn new(_state: S) -> Self {
         todo!()
     }
 }

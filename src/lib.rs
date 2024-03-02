@@ -11,8 +11,9 @@ pub(crate) mod manager;
 pub(crate) mod message;
 pub(crate) mod render_actor;
 pub(crate) mod units;
+pub(crate) mod update_queue;
 
 pub use component::{ComponentHandle, Interaction, Update};
 pub use frame::{FrameData, FrameHandle};
-pub use manager::{run, UpdateManager};
+pub use manager::{run, RenderManager};
 pub use units::UserUnits::*;

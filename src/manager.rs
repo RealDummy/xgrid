@@ -1,19 +1,14 @@
 use std::{
-    default, iter,
-    marker::PhantomData,
-    mem::MaybeUninit,
-    rc::{self, Rc},
+    iter,
     sync::{
-        self,
-        atomic::{AtomicUsize, Ordering},
-        mpsc, Arc, Condvar, Mutex,
+        mpsc,
     },
-    thread::{self, scope, ScopedJoinHandle},
+    thread::{self},
 };
 
 use bytemuck::{Pod, Zeroable};
-use log::{debug, warn};
-use wgpu::{util::DeviceExt, Queue, RenderPass, SurfaceError};
+use log::{warn};
+use wgpu::{util::DeviceExt, SurfaceError};
 use winit::{
     dpi::LogicalSize,
     event::{ElementState, Event, KeyEvent, WindowEvent},
@@ -23,14 +18,13 @@ use winit::{
 };
 
 use crate::{
-    component::{self, Component, Frame, QueryId, Update},
-    frame::{FrameData, FrameHandle, FrameRenderer},
-    grid::{GridBuilder, GridData, GridHandle, GridRenderer, XName, YName},
+    component::{self, Update},
+    frame::{FrameHandle, FrameRenderer},
+    grid::{GridHandle, GridRenderer},
     handle::{Handle, HandleLike},
-    manager,
     render_actor::{FrameMessage, UpdateMessage},
-    units::{UserUnits, VUnit},
-    ComponentHandle, Interaction,
+    units::VUnit,
+    ComponentHandle,
 };
 
 const VERTICES: &[Vertex] = &[
@@ -145,10 +139,7 @@ impl<T: Into<VUnit>> Into<MarginBox> for Borders<T> {
         }
     }
 }
-
-pub type WindowHandle = Handle<()>;
-
-pub struct UpdateManager<'a, App: Update> {
+pub struct RenderManager<'a> {
     vertex_buffer: wgpu::Buffer,
     surface: wgpu::Surface<'a>,
     window: &'a winit::window::Window,
@@ -156,23 +147,22 @@ pub struct UpdateManager<'a, App: Update> {
     index_render_target: wgpu::Texture,
     base_handle: FrameHandle,
     msg_recv: mpsc::Receiver<UpdateMessage>,
-    frame_to_grid_handle_map: Vec<Option<GridHandle>>,
+    grid_to_frame_map: Vec<FrameHandle>,
     config: wgpu::SurfaceConfiguration,
     device: wgpu::Device,
     queue: wgpu::Queue,
     frame_renderer: FrameRenderer,
     grid_renderer: GridRenderer,
-    app: ComponentHandle<App>,
 }
 
-impl<'a, App: Update> UpdateManager<'a, App> {
+impl<'a> RenderManager<'a> {
     pub async fn new(window: &'a Window, recv: mpsc::Receiver<UpdateMessage>) -> Self {
         let size = LogicalSize::<i32> {
             width: 400,
             height: 400,
         }
         .to_physical(window.scale_factor());
-        let world_view = WorldView {
+        let _world_view = WorldView {
             x: 0.into(),
             y: 0.into(),
             w: VUnit::new(size.width),
@@ -264,8 +254,6 @@ impl<'a, App: Update> UpdateManager<'a, App> {
             usage: wgpu::BufferUsages::VERTEX,
         });
 
-        let app = ComponentHandle::new(App::init());
-
         Self {
             frame_renderer: FrameRenderer::new(&device, &config),
             grid_renderer: GridRenderer::new(&device, &config),
@@ -275,13 +263,12 @@ impl<'a, App: Update> UpdateManager<'a, App> {
             surface,
             window,
             msg_recv: recv,
-            frame_to_grid_handle_map: vec![None],
+            grid_to_frame_map: vec![],
             // components: vec![],
             base_handle: window_handle,
             config,
             device,
             queue,
-            app,
         }
     }
     pub fn window(&self) -> FrameHandle {
@@ -337,7 +324,6 @@ impl<'a, App: Update> UpdateManager<'a, App> {
     // }
 
     pub fn render(&'a self) -> Result<(), SurfaceError> {
-        //self.prepare();
         let output = self.surface.get_current_texture()?;
         let view = output
             .texture
@@ -398,13 +384,61 @@ impl<'a, App: Update> UpdateManager<'a, App> {
         output.present();
         Ok(())
     }
+    fn prepare(&mut self) {
+        self.grid_renderer.prepare(&mut self.frame_renderer, &self.queue);
+    }
     fn input(&self, _window_event: &WindowEvent) -> bool {
         false
     }
-    pub fn run_forever(self) {}
+    pub fn run_forever(mut self) {
+        loop {
+            let msg = self.msg_recv.recv().expect("update message recv err");
+            match msg {
+                UpdateMessage::Draw => {
+                    self.render().expect("render err");
+                }
+                UpdateMessage::Prepare => {
+                    self.prepare()
+                }
+                UpdateMessage::ModifyFrame(h, f )=> {
+                    let FrameMessage {
+                        size,
+                        color,
+                        ..
+                    } = f;
+                    if let Some(size) = size {
+                        self.frame_renderer.update(h, &size);
+                    }
+                    if let Some(color) = color {
+                        self.frame_renderer.update_color(h, color);
+                    }
+                }
+                UpdateMessage::NewFrame(grid, f) => {
+                    let FrameMessage {
+                        size,
+                        color,
+                        margin,
+                    } = f;
+                    let size = size.unwrap_or(BBox::zeroed());
+                    let color = color.unwrap_or([0; 4]);
+                    let margin = margin.unwrap_or(MarginBox::zeroed());
+                    self.frame_renderer.add(crate::FrameData { 
+                        data: size, 
+                        margin: margin, 
+                        color: color, 
+                        camera_index: self.grid_to_frame_map[grid.index()].index() as u32,
+                    });
+                }
+                UpdateMessage::ModifyGrid(grid, g) => (),
+                UpdateMessage::NewGrid(grid_builder) => {
+                    self.grid_to_frame_map[grid_builder.index().index()] = grid_builder.parent()
+                }
+            }
+        }
+    }
 }
 
-pub fn run<App: Update<Msg = component::Interaction> + Send>() {
+pub fn run<App: Update<Msg = component::Interaction> + Send>(app: App) {
     cfg_if::cfg_if! {
         if #[cfg(target_arch = "wasm32")] {
             std::panic::set_hook(Box::new(console_error_panic_hook::hook));
@@ -435,9 +469,9 @@ pub fn run<App: Update<Msg = component::Interaction> + Send>() {
     let event_loop = EventLoop::new().unwrap();
 
     let window = WindowBuilder::new().build(&event_loop).unwrap();
-    let (send, recv) = mpsc::channel();
+    let (_send, recv) = mpsc::channel();
     thread::scope(|s| {
-        let updates = pollster::block_on(UpdateManager::<App>::new(&window, recv));
+        let updates = pollster::block_on(RenderManager::new(&window, recv));
         s.spawn(move || {
             updates.run_forever();
         });
@@ -447,7 +481,7 @@ pub fn run<App: Update<Msg = component::Interaction> + Send>() {
                 match event {
                     Event::WindowEvent {
                         ref event,
-                        window_id,
+                        window_id: _,
                     } => {
                         match event {
                             WindowEvent::CloseRequested
@@ -460,7 +494,7 @@ pub fn run<App: Update<Msg = component::Interaction> + Send>() {
                                     },
                                 ..
                             } => target.exit(),
-                            WindowEvent::Resized(physical_size) => {}
+                            WindowEvent::Resized(_physical_size) => {}
                             WindowEvent::ScaleFactorChanged { .. } => {
                                 ()
                                 //self.scale(*scale_factor);
@@ -484,7 +518,7 @@ pub fn run<App: Update<Msg = component::Interaction> + Send>() {
                                 }
                                 //updates.window.request_redraw();
                             }
-                            WindowEvent::MouseInput { state, .. } => {
+                            WindowEvent::MouseInput {  .. } => {
                                 //app.update(Interaction::Click(matches!(state, ElementState::Pressed)), updates.window(), &mut updates);
                             }
                             _ => {}

@@ -1,4 +1,4 @@
-use log::debug;
+
 use xgrid::*;
 
 #[derive(Clone, Copy, Debug)]
@@ -18,7 +18,7 @@ impl Update for Div {
     fn build(&self) {
         // manager.get_frame_data(frame ).color = if self.down {Div::DC} else {Div::UC}
     }
-    fn update(&mut self, msg: Self::Msg) -> bool {
+    fn update(&mut self, msg: Self::Msg, queue: &UpdateQueue) {
         return {
             let res = msg != self.down;
             self.down = msg;
@@ -27,7 +27,7 @@ impl Update for Div {
     }
 }
 struct App {
-    states: [ComponentHandle<Div>; 6],
+    states: [Div; 6],
 }
 
 impl Update for App {
@@ -36,7 +36,7 @@ impl Update for App {
         todo!()
     }
     fn build(&self) {}
-    fn update(&mut self, msg: Self::Msg) -> bool {
+    fn update(&mut self, _msg: Self::Msg) -> bool {
         todo!()
     }
 }

@@ -3,11 +3,10 @@ use std::marker::PhantomData;
 use crate::{
     frame::FrameHandle,
     handle::{FallableHandleLike, Handle, HandleLike},
-    manager::UpdateManager,
     units::UserUnits,
 };
 
-use super::{data::GridExpandDir, GridHandle};
+use super::{data::{GridData, GridExpandDir}, GridHandle};
 
 #[derive(Clone)]
 pub enum SpacerUnit {
@@ -57,6 +56,7 @@ pub struct GridBuilder {
     spacers: [GridSpacer; 2],
     expands: Option<GridExpandDir>,
     parent: FrameHandle,
+    index: GridHandle,
 }
 
 pub struct SpacerBuilder<'b, const EXPANDS: bool, T: Dir + FallableHandleLike> {
@@ -113,12 +113,19 @@ pub type WidthSpacerBuilder<'a, const EXPANDS: bool> = SpacerBuilder<'a, EXPANDS
 pub type HeightSpacerBuilder<'a, const EXPANDS: bool> = SpacerBuilder<'a, EXPANDS, YName>;
 
 impl GridBuilder {
-    pub fn new(parent: FrameHandle) -> GridBuilder {
+    pub(super) fn new(parent: FrameHandle, index: GridHandle) -> GridBuilder {
         GridBuilder {
             spacers: [GridSpacer::new(), GridSpacer::new()],
             expands: None,
             parent,
+            index,
         }
+    }
+    pub(crate) fn parent(&self) -> FrameHandle {
+        self.parent
+    }
+    pub(crate) fn index(&self) -> GridHandle {
+        self.index
     }
     pub fn widths(&mut self) -> WidthSpacerBuilder<false> {
         WidthSpacerBuilder::new(self)
@@ -126,11 +133,8 @@ impl GridBuilder {
     pub fn heights(&mut self) -> HeightSpacerBuilder<false> {
         HeightSpacerBuilder::new(self)
     }
-    pub fn build(self) -> GridHandle {
-        // manager.add_grid(
-        //     self.parent,
-        //     self,
-        // )
-        todo!()
+    pub fn build(self) -> GridData {
+        let [x_spacer, y_spacer] = self.spacers;
+        GridData::new(self.parent, x_spacer, y_spacer, self.expands)
     }
 }

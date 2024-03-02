@@ -1,17 +1,6 @@
-use std::borrow::Borrow;
-use std::mem::MaybeUninit;
-use std::sync::mpsc::Sender;
-use std::sync::{self, mpsc, Arc, Condvar, Mutex};
-use std::thread::{self, scope, JoinHandle, Scope, ScopedJoinHandle};
-
-use log::debug;
-use wgpu::{CommandEncoder, RenderPass};
-use winit::window::Window;
-
-use crate::frame::FrameRenderer;
-use crate::grid::{GridBuilder, GridData, GridHandle, GridRenderer};
+use crate::grid::{GridBuilder, GridHandle};
 use crate::manager::{BBox, MarginBox};
-use crate::{FrameHandle, UpdateManager};
+use crate::{FrameHandle};
 
 pub struct FrameMessage {
     pub size: Option<BBox>,
@@ -22,7 +11,7 @@ pub struct GridMessage {}
 
 pub enum UpdateMessage {
     ModifyFrame(FrameHandle, FrameMessage),
-    NewFrame(FrameMessage),
+    NewFrame(GridHandle, FrameMessage),
     ModifyGrid(GridHandle, GridMessage),
     NewGrid(GridBuilder),
     Prepare,

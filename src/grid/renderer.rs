@@ -41,7 +41,7 @@ impl GridRenderer {
     }
     pub fn add_frame(
         &mut self,
-        frame_renderer: &mut FrameRenderer,
+        _frame_renderer: &mut FrameRenderer,
         grid_handle: GridHandle,
         frame_handle: FrameHandle,
         x: XName,
