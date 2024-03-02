@@ -123,10 +123,11 @@ impl GridBuilder {
     pub fn heights(&mut self) -> HeightSpacerBuilder<false> {
         HeightSpacerBuilder::new(self)
     }
-    pub fn build(self, manager: &mut UpdateManager) -> GridHandle {
-        manager.add_grid(
-            self.parent,
-            self,
-        )
+    pub fn build(self) -> GridHandle {
+        // manager.add_grid(
+        //     self.parent,
+        //     self,
+        // )
+        todo!()
     }
 }

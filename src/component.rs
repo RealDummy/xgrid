@@ -1,8 +1,8 @@
-use std::{borrow::BorrowMut, clone, fmt::Debug, rc::Rc, sync::Mutex};
+use std::{borrow::BorrowMut, clone, fmt::Debug, marker::PhantomData, rc::Rc, sync::Mutex};
 
 use log::{debug, warn};
 
-use crate::{frame::{FrameData, FrameHandle}, handle::HandleLike, manager::UpdateManager};
+use crate::{frame::{FrameData, FrameHandle}, handle::HandleLike, manager::UpdateManager, render_actor::UpdateMessage};
 
 
 pub enum UpdateAction {
@@ -11,16 +11,11 @@ pub enum UpdateAction {
 }
 pub trait Update {
     type Msg: Debug;
-    fn update(&mut self, msg: Self::Msg, frame: FrameHandle, manager: &mut UpdateManager) -> bool;
-    fn build(&self, frame: FrameHandle, manager: &mut UpdateManager);
-    fn init(frame: FrameHandle, manager: &mut UpdateManager) -> Self;
+    fn update(&mut self, msg: Self::Msg) -> bool;
+    fn build(&self);
+    fn init() -> Self;
 }
 
-pub trait UpdateComponent {
-    type Msg: Debug;
-    fn update(&self, msg: Self::Msg, frame: FrameHandle, manager: &mut UpdateManager);
-    fn build(&self, frame: FrameHandle, manager: &mut UpdateManager);
-}
 
 #[derive(Debug)]
 pub enum Interaction {
@@ -47,56 +42,13 @@ pub struct Component<S: Update> {
 impl<S: Update> Frame for Component<S> {}
 
 pub struct ComponentHandle<S: Update> {
-    component: Rc<Mutex<Component<S>>>,
+    state_index: usize,
+    frame_index: FrameHandle,
+    _t: PhantomData<S>,
+    
 }
 impl<S: Update> ComponentHandle<S> {
-    pub(super) fn new(frame: FrameHandle, state: S) -> Self {
-        Self {
-            component: Rc::new(Mutex::new(Component{
-                state: state,
-                dirty: true,
-                ids: QueryId {
-                    handle: frame,
-                    class: 0,
-                }
-            })),
-        }
-    }
-    // pub(super) fn as_frame(&self) -> Rc<Mutex<dyn Frame>> {
-    //     self.component.clone()
-    // }
-}
-
-impl<S: Update> UpdateComponent for ComponentHandle<S> {
-    type Msg = S::Msg;
-    fn update(&self, msg: Self::Msg, frame: FrameHandle, manager: &mut UpdateManager) {
-        loop {
-            match self.component.lock() {
-                Ok(mut state) => {
-                    let handle = state.ids.handle;
-                    if state.state.update(msg, handle, manager) {
-                        state.state.build(handle, manager)
-                    }
-                    return;
-                }
-                Err(e) => {
-                    warn!("{e}");
-                }
-            }
-        }
-    }
-    fn build(&self,frame: FrameHandle, manager: &mut UpdateManager) {
-        loop {
-            match self.component.lock() {
-                Ok(state) => {
-                    state.state.build(frame, manager);
-                    return;
-                }
-                Err(e) => {
-                    warn!("{e}");
-                }
-            }
-
-        }
+    pub(super) fn new(state: S) -> Self {
+        todo!()
     }
 }

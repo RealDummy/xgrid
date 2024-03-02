@@ -12,7 +12,7 @@ pub(crate) mod message;
 pub(crate) mod units;
 pub(crate) mod render_actor;
 
-pub use component::{Update, UpdateComponent, Interaction, ComponentHandle};
+pub use component::{Update, Interaction, ComponentHandle};
 pub use manager::{run, UpdateManager};
 pub use units::UserUnits::*;
 pub use frame::{FrameHandle, FrameData};

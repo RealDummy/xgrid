@@ -12,7 +12,7 @@ use winit::{
 };
 
 use crate::{
-    component::{self, Component, Frame, QueryId, Update}, frame::{FrameData, FrameHandle, FrameRenderer}, grid::{GridBuilder, GridData, GridHandle, GridRenderer, XName, YName}, handle::{Handle, HandleLike}, manager, render_actor::{FrameMessage, RenderActor, UpdateMessage}, units::{UserUnits, VUnit}, ComponentHandle, Interaction, UpdateComponent
+    component::{self, Component, Frame, QueryId, Update}, frame::{FrameData, FrameHandle, FrameRenderer}, grid::{GridBuilder, GridData, GridHandle, GridRenderer, XName, YName}, handle::{Handle, HandleLike}, manager, render_actor::{FrameMessage, UpdateMessage}, units::{UserUnits, VUnit}, ComponentHandle, Interaction
 };
 
 const VERTICES: &[Vertex] = &[
@@ -130,27 +130,28 @@ impl<T: Into<VUnit>> Into<MarginBox> for Borders<T> {
 
 pub type WindowHandle = Handle<()>;
 
-pub struct UpdateManager<'a> {
+pub struct UpdateManager<'a, App: Update> {
     vertex_buffer: wgpu::Buffer,
     surface: wgpu::Surface<'a>,
     window: &'a winit::window::Window,
     size: winit::dpi::PhysicalSize<u32>,
     index_render_target: wgpu::Texture,
     base_handle: FrameHandle,
-    renderer: RenderActor,
+    msg_recv: mpsc::Receiver<UpdateMessage>,
     frame_to_grid_handle_map: Vec<Option<GridHandle>>,
-    grid_count: usize,
     config: wgpu::SurfaceConfiguration,
     device: wgpu::Device,
-    queue: Arc<wgpu::Queue>,
-    pair: Arc<(Mutex<Option<RenderPass<'a>>>, Condvar)>,
+    queue: wgpu::Queue,
+    frame_renderer: FrameRenderer,
+    grid_renderer: GridRenderer,
+    app: ComponentHandle<App>
 }
 
 
 
 
-impl<'a> UpdateManager<'a> {
-    pub async fn new<App: Update>(window: &'a Window) -> (Self, ComponentHandle<App>) {
+impl<'a, App: Update> UpdateManager<'a, App> {
+    pub async fn new(window: &'a Window, recv: mpsc::Receiver<UpdateMessage>) -> Self {
         let size = LogicalSize::<i32> {
             width: 400,
             height: 400,
@@ -246,98 +247,81 @@ impl<'a> UpdateManager<'a> {
             contents: bytemuck::cast_slice(VERTICES),
             usage: wgpu::BufferUsages::VERTEX,
         });
-        let pair = Arc::new((Mutex::new(None), Condvar::new()));
-        let queue = Arc::new(queue);
-        let renderer =RenderActor::new(&device, &config);
-        let mut manager = Self {
+
+        let app = ComponentHandle::new(App::init());
+
+        Self {
+            frame_renderer: FrameRenderer::new(&device, &config),
+            grid_renderer: GridRenderer::new(&device, &config),
             size: size.cast(),
             vertex_buffer,
             index_render_target,
             surface,
             window,
-            renderer,
+            msg_recv: recv,
             frame_to_grid_handle_map: vec![None],
             // components: vec![],
             base_handle: window_handle,
             config,
             device,
             queue,
-            grid_count: 0,
-            pair,
-        };
-        let app = ComponentHandle::new(window_handle, App::init(window_handle, &mut manager));
-        return (manager, app);
+            app,
+        }
     }
     pub fn window(&self) -> FrameHandle {
         self.base_handle
     }
-    pub fn update_frame(&self, frame_handle: FrameHandle, size: BBox) {
-        self.renderer.send(UpdateMessage::ModifyFrame(frame_handle, FrameMessage {
-            size: Some(size),
-            color: None,
-            margin: None,
-        }));
-    }
-    pub fn update_frame_color(&self, frame_handle: FrameHandle, color: [u8; 4]) {
-        self.renderer.send(UpdateMessage::ModifyFrame(frame_handle, FrameMessage {
-            size: None,
-            color: Some(color),
-            margin: None,
-        }));
-    }
-    pub fn prepare(&'a self) {
-        self.renderer.send(UpdateMessage::Prepare(Arc::clone(&self.queue)));
-    }
-    pub fn add_frame<S: Update>(&mut self, grid_handle: GridHandle, x: XName, y: YName) -> ComponentHandle<S> {
-        self.frame_to_grid_handle_map.push(None);
-        let fh = self.renderer.send(UpdateMessage::NewFrame(FrameMessage {
-            size: Some(BBox::zeroed()),
-            margin: Some(Borders {
-                top: 10,
-                bottom: 10,
-                left: 10,
-                right: 10,
-            }.into()),
-            color: Some([255, 255, 255, 25])
-        }));
-        let fh = FrameHandle::new(self.frame_to_grid_handle_map.len() - 1);
-        let comp = ComponentHandle::new(fh, S::init(fh, self));
+    
+    // pub fn add_frame<S: Update>(&mut self, grid_handle: GridHandle, x: XName, y: YName) -> ComponentHandle<S> {
+    //     self.frame_to_grid_handle_map.push(None);
+    //     let fh = self.render_sender.send(UpdateMessage::NewFrame(FrameMessage {
+    //         size: Some(BBox::zeroed()),
+    //         margin: Some(Borders {
+    //             top: 10,
+    //             bottom: 10,
+    //             left: 10,
+    //             right: 10,
+    //         }.into()),
+    //         color: Some([255, 255, 255, 25])
+    //     }));
+    //     let fh = FrameHandle::new(self.frame_to_grid_handle_map.len() - 1);
+    //     let comp = ComponentHandle::new(fh, S::init(fh, self));
 
-        // self.components.push(comp.as_frame());
-        comp
-    }
-    pub fn create_grid_in(&mut self, parent_frame: FrameHandle) -> GridBuilder {
-        GridBuilder::new(parent_frame)
-    }
+    //     // self.components.push(comp.as_frame());
+    //     comp
+    // }
+    // pub fn create_grid_in(&mut self, parent_frame: FrameHandle) -> GridBuilder {
+    //     GridBuilder::new(parent_frame)
+    // }
 
-    pub(crate) fn add_grid(&mut self, frame: FrameHandle, grid: GridBuilder) -> GridHandle {
-        self.renderer.send(UpdateMessage::NewGrid(grid));
-        let grid_handle = GridHandle::new(self.grid_count);
-        self.frame_to_grid_handle_map[frame.index()] = Some(grid_handle);
-        self.grid_count += 1;
-        return grid_handle;
-    }
+    // pub(crate) fn add_grid(&mut self, frame: FrameHandle, grid: GridBuilder) -> GridHandle {
+    //     self.render_sender.send(UpdateMessage::NewGrid(grid));
+    //     let grid_handle = GridHandle::new(self.grid_count);
+    //     self.frame_to_grid_handle_map[frame.index()] = Some(grid_handle);
+    //     self.grid_count += 1;
+    //     return grid_handle;
+    // }
 
-    fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
-        if new_size.width > 0 && new_size.height > 0 {
-            self.size = new_size.cast();
-            self.config.width = new_size.width;
-            self.config.height = new_size.height;
-            self.surface.configure(&self.device, &self.config);
-            let size = new_size.to_logical(self.window.scale_factor());
-            let cam = Rect {
-                x: 0,
-                y: 0,
-                w: size.width,
-                h: size.height,
-            }
-            .into();
-            self.update_frame(self.base_handle, cam);
-        }
-    }
+    // fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
+    //     if new_size.width > 0 && new_size.height > 0 {
+    //         self.size = new_size.cast();
+    //         self.config.width = new_size.width;
+    //         self.config.height = new_size.height;
+    //         self.surface.configure(&self.device, &self.config);
+    //         let size = new_size.to_logical(self.window.scale_factor());
+    //         let cam = Rect {
+    //             x: 0,
+    //             y: 0,
+    //             w: size.width,
+    //             h: size.height,
+    //         }
+    //         .into();
+    //         self.update_frame(self.base_handle, cam);
+    //     }
+    // }
 
     pub fn render(&'a self) -> Result<(), SurfaceError> {
-        self.prepare();
+        //self.prepare();
         let output = self.surface.get_current_texture()?;
         let view = output
             .texture
@@ -403,10 +387,13 @@ impl<'a> UpdateManager<'a> {
     fn input(&self, _window_event: &WindowEvent) -> bool {
         false
     }
+    pub fn run_forever(self) {
+
+    }
 }
 
 
-pub async fn run<'a, App: Update<Msg = component::Interaction>>() {
+pub fn run<App: Update<Msg = component::Interaction> + Send>() {
     cfg_if::cfg_if! {
         if #[cfg(target_arch = "wasm32")] {
             std::panic::set_hook(Box::new(console_error_panic_hook::hook));
@@ -434,21 +421,23 @@ pub async fn run<'a, App: Update<Msg = component::Interaction>>() {
             })
             .expect("Couldn't append canvas to document body.");
     }
-    // State::new uses async code, so we're going to wait for it to finish
     let event_loop = EventLoop::new().unwrap();
 
     let window = WindowBuilder::new().build(&event_loop).unwrap();
-    let (mut updates, app) = UpdateManager::new::<App>(&window).await;
-    
-    
+    let (send, recv) = mpsc::channel();
     thread::scope(|s|{
+        let updates = pollster::block_on(UpdateManager::<App>::new(&window, recv));
+        s.spawn(move || {
+            updates.run_forever();
+        });
+    
+    
     let exit_status = event_loop.run(move |event: Event<_>, target: &EventLoopWindowTarget<_>| {
         match event {
             Event::WindowEvent {
                 ref event,
                 window_id,
-            } if window_id == updates.window.id() => {
-                if !updates.input(event) {
+            } => {
                     match event {
                         WindowEvent::CloseRequested
                         | WindowEvent::KeyboardInput {
@@ -461,7 +450,7 @@ pub async fn run<'a, App: Update<Msg = component::Interaction>>() {
                             ..
                         } => target.exit(),
                         WindowEvent::Resized(physical_size) => {
-                            updates.resize(*physical_size);
+                            
                         }
                         WindowEvent::ScaleFactorChanged { .. } => {
                             ()
@@ -475,21 +464,21 @@ pub async fn run<'a, App: Update<Msg = component::Interaction>>() {
                                 Ok(_) => {}
                                 // Reconfigure the surface if it's lost or outdated
                                 Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
-                                    updates.resize(updates.size)
+                                    
                                 }
                                 // The system is out of memory, we should probably quit
                                 Err(wgpu::SurfaceError::OutOfMemory) => target.exit(),
                                 // We're ignoring timeouts
                                 Err(wgpu::SurfaceError::Timeout) => log::warn!("Surface timeout"),
                             }
-                            updates.window.request_redraw();
+                            //updates.window.request_redraw();
                         }
                         WindowEvent::MouseInput { state, .. } => {
-                            app.update(Interaction::Click(matches!(state, ElementState::Pressed)), updates.window(), &mut updates);
+                            //app.update(Interaction::Click(matches!(state, ElementState::Pressed)), updates.window(), &mut updates);
                         }
                         _ => {}
                     }
-                }
+                
             }
             _ => {}
         }
@@ -499,46 +488,3 @@ pub async fn run<'a, App: Update<Msg = component::Interaction>>() {
     };
     });
 }
-
-// pub struct Updater {
-//     send: mpsc::Sender<UpdateMessage>,
-//     barrier: Arc<std::sync::Barrier>,
-//     next_frame: AtomicUsize,
-//     next_grid: AtomicUsize,
-
-// }
-
-// impl Updater {
-//     pub fn new() -> Self {
-//         let (send, recv) = mpsc::channel();
-//         let barrier = Arc::new(sync::Barrier::new(2));
-//         let barr = barrier.clone();
-//         thread::spawn(move ||{
-//             pollster::block_on(run(barr, recv));
-//         });
-//         Self {
-//             send,
-//             barrier,
-//             next_frame: AtomicUsize::new(1),
-//             next_grid: AtomicUsize::new(1),
-//         }
-//     }
-//     pub fn add_frame(&self, grid_handle: GridHandle, x: XName, y: YName) -> FrameHandle {
-//         let res = FrameHandle::new(
-//             self.next_frame.fetch_add(1, Ordering::AcqRel)
-//         );
-//         self.send.send(UpdateMessage::AddFrame(grid_handle, x, y));
-//         res
-//     }
-//     pub fn new_grid(&self, parent: FrameHandle) -> GridBuilder{
-//         GridBuilder::new(parent)
-//     }
-//     pub fn add_grid(&self, grid_builder: GridBuilder) -> GridHandle {
-//         let res = GridHandle::new(
-//             self.next_grid.fetch_add(1, Ordering::AcqRel)
-//         );
-//         self.send.send(UpdateMessage::AddGrid(grid_builder));
-//         res
-//     }
-
-// }

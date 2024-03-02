@@ -15,15 +15,15 @@ impl Div {
 
 impl Update for Div {
     type Msg = bool;
-    fn init(frame: FrameHandle, manager: &mut UpdateManager) -> Self {
+    fn init() -> Self {
         Self {
             down: false,
         }
     }
-    fn build(&self, frame: FrameHandle, manager: &mut UpdateManager) {
+    fn build(&self) {
         // manager.get_frame_data(frame ).color = if self.down {Div::DC} else {Div::UC}
     }
-    fn update(&mut self, msg: Self::Msg, frame: FrameHandle, manager: &mut UpdateManager) -> bool{
+    fn update(&mut self, msg: Self::Msg) -> bool{
         return {
             let res = msg != self.down;
             self.down = msg;
@@ -31,93 +31,23 @@ impl Update for Div {
         }
    }
 }
-struct SubApp {
-    states: [ComponentHandle<Div>; 6],
-}
 struct App {
-     states: [ComponentHandle<SubApp>; 6],
+     states: [ComponentHandle<Div>; 6],
 }
 
 impl Update for App {
     type Msg = Interaction;
-    fn init(frame: FrameHandle, manager: &mut UpdateManager) -> Self {
-        let mut g = manager.create_grid_in(frame);
-        let [x1, x2, x3] = g
-            .widths()
-            .add(Pixel(100))
-            .add(Ratio(0.2))
-            .add_expanding(Fraction(1))
-            .assign();
-        let [y1, _y2, y3] = g
-            .heights()
-            .add(Pixel(100))
-            .add(Fraction(1))
-            .add(Pixel(100))
-            .assign();
-
-        let g = g.build(manager);
-        App {
-            states: [
-                manager.add_frame(g, x1, y1),
-                manager.add_frame( g,x2, y3),
-                manager.add_frame(g, x3, None),
-                manager.add_frame(g, x3, None),
-                manager.add_frame(g, x3, None),
-                manager.add_frame(g, x3, y3),
-            ],
-        } 
+    fn init() -> Self {
+        todo!()
     }
-    fn build(&self, frame: FrameHandle, manager: &mut UpdateManager) {
+    fn build(&self) {
 
     }
-    fn update(&mut self, msg: Self::Msg, frame: FrameHandle, manager: &mut UpdateManager) -> bool {
-        let Interaction::Click(msg) = msg else {
-            return false;
-        };
-        self.states.iter().for_each(|div| {
-            div.update(msg, frame, manager)
-        });
-        false
-    }
-}
-
-impl Update for SubApp {
-    type Msg = bool;
-    fn init(frame: FrameHandle, manager: &mut UpdateManager) -> Self {
-        let mut g = manager.create_grid_in(frame);
-        let [x1, x2] = g
-            .widths()
-            .add(Ratio(0.2))
-            .add_expanding(Fraction(1))
-            .assign();
-        let [y1] = g
-            .heights()
-            .add(Fraction(1))
-            .assign();
-
-        let g = g.build(manager);
-        SubApp {
-            states: [
-                manager.add_frame(g, x1, y1),
-                manager.add_frame( g,x2, y1),
-                manager.add_frame(g, x2, y1),
-                manager.add_frame(g, x2, y1),
-                manager.add_frame(g, x2, y1),
-                manager.add_frame(g, x2, y1),
-            ],
-        } 
-    }
-    fn build(&self, frame: FrameHandle, manager: &mut UpdateManager) {
-
-    }
-    fn update(&mut self, msg: Self::Msg, frame: FrameHandle, manager: &mut UpdateManager) -> bool {
-        self.states.iter().for_each(|div| {
-            div.update(msg, frame, manager)
-        });
-    false
+    fn update(&mut self, msg: Self::Msg) -> bool {
+        todo!()
     }
 }
 
 fn main() {
-    pollster::block_on(xgrid::run::<App>());
+    xgrid::run::<App>();
 }
