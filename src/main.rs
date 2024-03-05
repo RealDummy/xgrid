@@ -2,50 +2,54 @@ use xgrid::*;
 
 #[derive(Clone, Copy, Debug)]
 struct Div {
-    down: bool,
+    color: [u8; 4],
 }
 impl Div {
-    const UC: [u8; 4] = [100; 4];
-    const DC: [u8; 4] = [50; 4];
+    const UA: u8 = 100;
+    const DA: u8 = 255;
 }
 
 impl State for Div {
     type Msg = bool;
-    fn init(_builder: &mut Builder) -> Self {
-        Self { down: false }
+    type Param = [u8; 3];
+    fn init<P: State>(builder: &mut Builder<P>, param: Self::Param) -> Self {
+        Self { color: [param[0], param[1], param[2], Self::DA] }
     }
     fn update(&mut self, msg: Self::Msg, queue: &UpdateQueue) {
-        if self.down != msg {
-            queue.push(UpdateMsg::Frame(FrameMessage {
-                color: Some(match msg {
-                    true => Self::DC,
-                    false => Self::UC,
-                }),
-                ..FrameMessage::default()
-            }));
-            self.down = msg;
-        }
+        self.color[3] =  match msg {
+            true => Self::DA,
+            false => Self::UA,
+        };
+        queue.push(UpdateMsg::Frame(FrameMessage {
+            color: Some(self.color),
+            ..FrameMessage::default()
+        }));
     }
 }
+impl Observer for Div {
+    type Event = i32;
+}
+
 struct App {
     states: [Component<Div>; 6],
 }
 
 impl State for App {
     type Msg = bool;
-    fn init(builder: &mut Builder) -> Self {
+    type Param = ();
+    fn init<P: State>(builder: &mut Builder<P>, _: ()) -> Self {
         let mut g = builder.grid_builder();
         let [yn] = g.heights().add_expanding(Fraction(1)).assign();
         let [x] = g.widths().add(Ratio(1.0)).assign();
         let g = builder.grid(g);
         Self {
             states: [
-                builder.frame(g, x, yn),
-                builder.frame(g, x, yn),
-                builder.frame(g, x, yn),
-                builder.frame(g, x, yn),
-                builder.frame(g, x, yn),
-                builder.frame(g, x, yn),
+                builder.frame([255,0,0],g, x, yn),
+                builder.frame([0,255,0],g, x, yn),
+                builder.frame([0,0,255],g, x, yn),
+                builder.frame([255,255,0],g, x, yn),
+                builder.frame([255,0,255],g, x, yn),
+                builder.frame([0,255,255],g, x, yn),
             ],
         }
     }

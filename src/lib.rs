@@ -11,6 +11,8 @@ pub(crate) mod manager;
 pub(crate) mod render_actor;
 pub(crate) mod units;
 pub(crate) mod update_queue;
+pub(crate) mod observer;
+
 
 pub use component::{Builder, Component, UpdateQueue};
 pub use component::{Interaction, State};
@@ -19,3 +21,4 @@ pub use manager::{run, RenderManager};
 pub use render_actor::FrameMessage;
 pub use units::UserUnits::*;
 pub use update_queue::back::UpdateMsg;
+pub use observer::{EventDispatcher, Observer, Subscriber};

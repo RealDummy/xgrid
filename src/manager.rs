@@ -153,7 +153,6 @@ pub struct RenderManager<'a> {
     queue: wgpu::Queue,
     frame_renderer: FrameRenderer,
     grid_renderer: GridRenderer,
-    update_queue: update_queue::front::UpdateQueue,
 }
 
 impl<'a> RenderManager<'a> {
@@ -260,7 +259,7 @@ impl<'a> RenderManager<'a> {
         });
         let update_queue = front::UpdateQueue::new(&send);
         (
-            update_queue.clone(),
+            update_queue,
             Self {
                 frame_renderer: FrameRenderer::new(&device, &config),
                 grid_renderer: GridRenderer::new(&device, &config),
@@ -275,7 +274,6 @@ impl<'a> RenderManager<'a> {
                 config,
                 device,
                 queue,
-                update_queue,
                 msg_send: send,
             },
         )
@@ -351,9 +349,6 @@ impl<'a> RenderManager<'a> {
         self.grid_renderer
             .prepare(&mut self.frame_renderer, &self.queue);
         self.frame_renderer.prepare(&self.queue);
-    }
-    fn input(&self, _window_event: &WindowEvent) -> bool {
-        false
     }
     fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
         if new_size.width > 0 && new_size.height > 0 {
@@ -442,7 +437,7 @@ impl<'a> RenderManager<'a> {
     }
 }
 
-pub fn run<App: State<Msg = bool> + Send>() {
+pub fn run<App: State<Param = ()>>() {
     cfg_if::cfg_if! {
         if #[cfg(target_arch = "wasm32")] {
             std::panic::set_hook(Box::new(console_error_panic_hook::hook));
@@ -476,18 +471,14 @@ pub fn run<App: State<Msg = bool> + Send>() {
     let window = WindowBuilder::new().build(&event_loop).unwrap();
     let (send, recv) = mpsc::channel();
     let mut builder = ComponentBuilder::new(send.clone());
-    let mut app: Component<App> = {
-        let mut builder = Builder::new(
-            &mut builder,
-            component::ComponentType::Floating(FrameHandle::new(0)),
-        );
-        builder.floating_frame(Rect {
-            x: 0,
-            y: 0,
-            w: 400,
-            h: 400,
-        })
-    };
+    let mut app: Component<App> = builder.send_app(Rect {
+        x: 0,
+        y: 0,
+        w: 400,
+        h: 400,
+    }.into());
+
+
 
     thread::scope(|s| {
         let (queue, renderer) = pollster::block_on(RenderManager::new(&window, send.clone(), recv));
@@ -542,13 +533,7 @@ pub fn run<App: State<Msg = bool> + Send>() {
                                 send.send(UpdateMessage::Draw).unwrap();
                             }
                             WindowEvent::MouseInput { state, .. } => {
-                                app.update(
-                                    matches!(state, ElementState::Pressed),
-                                    &component::UpdateQueue::from_base(
-                                        &queue,
-                                        component::ComponentType::Floating(FrameHandle::new(0)),
-                                    ),
-                                );
+
                             }
                             _ => {}
                         }

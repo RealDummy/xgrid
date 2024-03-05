@@ -1,10 +1,10 @@
-use std::{fmt::Debug, sync::mpsc};
+use std::{cell::RefCell, fmt::Debug, rc::Rc, sync::{mpsc, Arc}};
 
 use crate::{
     frame::FrameHandle,
     grid::{GridBuilder, GridHandle, XName, YName},
     handle::HandleLike,
-    manager::{Borders, Rect},
+    manager::{BBox, Borders, Rect},
     render_actor::{FrameMessage, UpdateMessage},
     update_queue::{self, back::QualifiedUpdateMsg},
     UpdateMsg,
@@ -16,9 +16,21 @@ pub struct ComponentBuilder {
     grid_count: usize,
 }
 
-pub struct Builder<'a> {
+pub struct GlobalState {
+
+}
+
+impl State for GlobalState {
+    type Msg = ();
+    type Param = ();
+    fn init<P: State>(_builder: &mut Builder<P>, _param: Self::Param) -> Self {
+        Self {}
+    }
+    fn update(&mut self, _msg: Self::Msg, _queue: &UpdateQueue) {}
+}
+pub struct Builder<'a, C: State> {
     b: &'a mut ComponentBuilder,
-    index: ComponentType,
+    parent: Component<C>,
 }
 impl ComponentBuilder {
     pub fn new(send: mpsc::Sender<UpdateMessage>) -> Self {
@@ -28,21 +40,9 @@ impl ComponentBuilder {
             grid_count: 0,
         }
     }
-}
-
-impl<'a> Builder<'a> {
-    pub(crate) fn new(b: &'a mut ComponentBuilder, index: ComponentType) -> Self {
-        Self { b, index }
-    }
-    pub fn frame<T: State>(
-        &mut self,
-        grid: GridHandle,
-        x: Option<XName>,
-        y: Option<YName>,
-    ) -> Component<T> {
-        let res = FrameHandle::new(self.b.frame_count);
-
-        self.b
+    pub fn send_frame(&mut self, grid: GridHandle, x: Option<XName>, y: Option<YName>) -> FrameHandle {
+        let res = FrameHandle::new(self.frame_count);
+        self
             .render_sender
             .send(UpdateMessage::NewFrame(
                 grid,
@@ -64,46 +64,75 @@ impl<'a> Builder<'a> {
                 res,
             ))
             .unwrap();
-        self.b.frame_count += 1;
-        Component {
-            value: T::init(self),
-            handle: ComponentType::GridMember(res, grid),
-        }
+        self.frame_count += 1;
+        return res;
     }
-    pub fn floating_frame<T: State>(&mut self, size: Rect<i32>) -> Component<T> {
-        self.b
-            .render_sender
-            .send(UpdateMessage::NewFloatingFrame(FrameMessage {
-                size: Some(size.into()),
-                margin: None,
-                color: Some([255; 4]),
-            }))
+    pub fn send_floating(&mut self, size: BBox) -> FrameHandle {
+        self
+        .render_sender
+        .send(UpdateMessage::NewFloatingFrame(FrameMessage {
+            size: Some(size.into()),
+            margin: None,
+            color: Some([255; 4]),
+        }))
+        .unwrap();
+        let res = FrameHandle::new(self.frame_count);
+        self.frame_count += 1;
+        return res;
+    }
+    pub fn send_grid(&mut self, grid: GridBuilder) -> GridHandle {
+        self.render_sender
+            .send(UpdateMessage::NewGrid(
+                GridHandle::new(self.grid_count),
+                grid,
+            ))
             .unwrap();
-        let res = self.b.frame_count;
-        self.b.frame_count += 1;
-        Component {
-            value: T::init(self),
-            handle: ComponentType::Floating(FrameHandle::new(res)),
-        }
+        let res = GridHandle::new(self.grid_count);
+        self.grid_count += 1;
+        return res;
+    }
+    pub(crate) fn send_app<App: State<Param = ()>>(&mut self, size: BBox) -> Component<App> {
+        assert!(self.frame_count == 0);
+        let res = self.send_floating(size);
+        let mut b = Builder::first(self);
+        Component::new(App::init(&mut b, () ), ComponentType::Floating(res))
+    }
+}
+impl<'a> Builder<'a, GlobalState> {
+    pub(crate) fn first(b: &'a mut ComponentBuilder) -> Self {
+        Self { b, parent: Component::new(GlobalState {}, ComponentType::Floating(FrameHandle::new(0))) }
+    }
+}
+
+impl<'a, C: State> Builder<'a, C> {
+
+    pub(crate) fn new(b: &'a mut ComponentBuilder, component: Component<C>) -> Self {
+        Self { b, parent: component }
+    }
+    pub fn frame<T: State>(
+        &mut self,
+        param: T::Param,
+        grid: GridHandle,
+        x: Option<XName>,
+        y: Option<YName>,
+    ) -> Component<T> {
+        let res = self.b.send_frame(grid, x, y);
+        Component::new(T::init(&mut Builder::new(self.b, Component::clone(&self.parent)), param), ComponentType::GridMember(res, grid))
+    }
+    pub fn floating_frame(&mut self, param: C::Param, size: Rect<i32>) -> Component<C> {
+        let res = self.b.send_floating(size.into());
+        Component::new(C::init(self, param), ComponentType::Floating(res))
     }
     pub fn grid_builder(&mut self) -> GridBuilder {
-        let parent = match self.index {
+        let parent = match self.parent.handle {
             ComponentType::Floating(i) => i,
             ComponentType::GridMember(i, _g) => i,
         };
         GridBuilder::new(parent)
     }
     pub fn grid(&mut self, grid: GridBuilder) -> GridHandle {
-        self.b
-            .render_sender
-            .send(UpdateMessage::NewGrid(
-                GridHandle::new(self.b.grid_count),
-                grid,
-            ))
-            .unwrap();
-        let res = self.b.grid_count;
-        self.b.grid_count += 1;
-        GridHandle::new(res)
+        let res = self.b.send_grid(grid);
+        return res;
     }
 }
 
@@ -123,9 +152,10 @@ impl<'a> UpdateQueue<'a> {
     }
 }
 
-pub trait State {
+pub trait State: Sized {
     type Msg: Debug;
-    fn init(builder: &mut Builder) -> Self;
+    type Param;
+    fn init<P: State>(builder: &mut Builder<P>, param: Self::Param) -> Self;
     fn update(&mut self, msg: Self::Msg, queue: &UpdateQueue);
 }
 
@@ -144,14 +174,31 @@ impl ComponentType {
     }
 }
 
+pub type ComponentInner<T> = Arc<RefCell<T>>;
+
 pub struct Component<T: State> {
-    value: T,
+    inner: ComponentInner<T>,
     handle: ComponentType,
 }
 
+impl<T: State> Clone for Component<T> {
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+            handle: self.handle.clone(),
+        }
+    }
+}
+
 impl<T: State> Component<T> {
+    fn new(t: T, handle: ComponentType) -> Self {
+        Self {
+            inner: Arc::new(RefCell::new(t)),
+            handle,
+        }
+    }
     pub fn update(&mut self, msg: T::Msg, queue: &UpdateQueue) {
-        self.value.update(
+        self.inner.borrow_mut().update(
             msg,
             &UpdateQueue {
                 q: queue.q,
@@ -159,6 +206,9 @@ impl<T: State> Component<T> {
             },
         );
     }
+    pub(crate) fn inner(&self) -> ComponentInner<T> {
+        self.inner.clone()
+    } 
 }
 
 #[derive(Debug)]
