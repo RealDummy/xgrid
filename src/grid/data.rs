@@ -4,8 +4,6 @@ use std::{
     vec,
 };
 
-use log::debug;
-
 use crate::{
     frame::{FrameHandle, FrameRenderer},
     handle::{FallableHandleLike, HandleLike},
@@ -239,7 +237,12 @@ impl GridData {
         });
         self.find_next_slot(candidates, &self.cross_spacer.as_slice(), |h| h.cross)
     }
-    pub fn add_frame(&mut self, handle: FrameHandle, x: Option<XName>, y: Option<YName>) -> Result<(), ()> {
+    pub fn add_frame(
+        &mut self,
+        handle: FrameHandle,
+        x: Option<XName>,
+        y: Option<YName>,
+    ) -> Result<(), ()> {
         let (major_index, cross_index) = match self.expand_dir {
             Some(GridExpandDir::X) => (x.index(), y.index()),
             _ => (y.index(), x.index()),

@@ -6,7 +6,7 @@ use crate::{
     units::UserUnits,
 };
 
-use super::{data::{GridData, GridExpandDir}, GridHandle};
+use super::data::{GridData, GridExpandDir};
 
 #[derive(Clone, Debug)]
 pub enum SpacerUnit {
@@ -59,7 +59,6 @@ pub struct GridBuilder {
     parent: FrameHandle,
 }
 
-
 pub struct SpacerBuilder<'b, const EXPANDS: bool, T: GridDir + FallableHandleLike> {
     grid_builder: &'b mut GridBuilder,
     spacer: GridSpacer,
@@ -78,7 +77,7 @@ impl<'b, const EXPANDS: bool, T: GridDir + FallableHandleLike> SpacerBuilder<'b,
         self.spacer.push(SpacerUnit::Unit(u.clone()));
         self
     }
-    
+
     pub fn build(self) {
         self.grid_builder.spacers[match T::dir() {
             GridExpandDir::X => 0,

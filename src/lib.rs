@@ -12,10 +12,10 @@ pub(crate) mod render_actor;
 pub(crate) mod units;
 pub(crate) mod update_queue;
 
+pub use component::{Builder, Component, UpdateQueue};
 pub use component::{Interaction, State};
 pub use frame::{FrameData, FrameHandle};
 pub use manager::{run, RenderManager};
+pub use render_actor::FrameMessage;
 pub use units::UserUnits::*;
 pub use update_queue::back::UpdateMsg;
-pub use component::{Component, Builder, UpdateQueue};
-pub use render_actor::FrameMessage;

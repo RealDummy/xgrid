@@ -1,13 +1,11 @@
 use std::{
     iter,
-    sync::{
-        mpsc,
-    },
+    sync::mpsc,
     thread::{self},
 };
 
 use bytemuck::{Pod, Zeroable};
-use log::{debug, warn};
+use log::warn;
 use wgpu::{util::DeviceExt, SurfaceError};
 use winit::{
     dpi::{LogicalSize, PhysicalSize},
@@ -18,7 +16,14 @@ use winit::{
 };
 
 use crate::{
-    component::{self, Builder, ComponentBuilder, State}, frame::{FrameHandle, FrameRenderer}, grid::{builder, GridHandle, GridRenderer}, handle::{Handle, HandleLike}, render_actor::{FrameMessage, UpdateMessage}, units::VUnit, update_queue::{self, back::{Bounds, QualifiedUpdateMsg, UpdateReciever}, front}, Component, UpdateQueue
+    component::{self, Builder, ComponentBuilder, State},
+    frame::{FrameHandle, FrameRenderer},
+    grid::GridRenderer,
+    handle::HandleLike,
+    render_actor::{FrameMessage, UpdateMessage},
+    units::VUnit,
+    update_queue::{self, back::QualifiedUpdateMsg, front},
+    Component,
 };
 
 const VERTICES: &[Vertex] = &[
@@ -152,7 +157,11 @@ pub struct RenderManager<'a> {
 }
 
 impl<'a> RenderManager<'a> {
-    pub async fn new(window: &'a Window, send: mpsc::Sender<UpdateMessage>, recv: mpsc::Receiver<UpdateMessage>) -> (update_queue::front::UpdateQueue, Self) {
+    pub async fn new(
+        window: &'a Window,
+        send: mpsc::Sender<UpdateMessage>,
+        recv: mpsc::Receiver<UpdateMessage>,
+    ) -> (update_queue::front::UpdateQueue, Self) {
         let size = LogicalSize::<i32> {
             width: 400,
             height: 400,
@@ -250,23 +259,26 @@ impl<'a> RenderManager<'a> {
             usage: wgpu::BufferUsages::VERTEX,
         });
         let update_queue = front::UpdateQueue::new(&send);
-        (update_queue.clone(), Self {
-            frame_renderer: FrameRenderer::new(&device, &config),
-            grid_renderer: GridRenderer::new(&device, &config),
-            size: size.cast(),
-            vertex_buffer,
-            index_render_target,
-            surface,
-            window,
-            msg_recv: recv,
-            grid_to_frame_map: vec![],
-            base_handle: window_handle,
-            config,
-            device,
-            queue,
-            update_queue,
-            msg_send: send,
-        })
+        (
+            update_queue.clone(),
+            Self {
+                frame_renderer: FrameRenderer::new(&device, &config),
+                grid_renderer: GridRenderer::new(&device, &config),
+                size: size.cast(),
+                vertex_buffer,
+                index_render_target,
+                surface,
+                window,
+                msg_recv: recv,
+                grid_to_frame_map: vec![],
+                base_handle: window_handle,
+                config,
+                device,
+                queue,
+                update_queue,
+                msg_send: send,
+            },
+        )
     }
     pub fn window(&self) -> FrameHandle {
         self.base_handle
@@ -330,16 +342,15 @@ impl<'a> RenderManager<'a> {
             });
             index_render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
             self.frame_renderer.render_index(&mut index_render_pass);
-
         }
         self.queue.submit(iter::once(encoder.finish()));
         output.present();
         Ok(())
     }
     fn prepare(&mut self) {
-        self.grid_renderer.prepare(&mut self.frame_renderer, &self.queue);
-        self.frame_renderer.prepare( &self.queue);
-
+        self.grid_renderer
+            .prepare(&mut self.frame_renderer, &self.queue);
+        self.frame_renderer.prepare(&self.queue);
     }
     fn input(&self, _window_event: &WindowEvent) -> bool {
         false
@@ -358,27 +369,19 @@ impl<'a> RenderManager<'a> {
             //debug!("{msg:?}");
             match msg {
                 UpdateMessage::Draw => {
-                        let rr = self.render();
-                        self.window.request_redraw();
-                        let Err(e) = rr else {
-                            continue;
-                        };
-                        match e {
-                            SurfaceError::Lost => {
-                                self.resize(self.size)
-                            },
-                            _ => warn!("{e}"),
-                        }
+                    let rr = self.render();
+                    self.window.request_redraw();
+                    let Err(e) = rr else {
+                        continue;
+                    };
+                    match e {
+                        SurfaceError::Lost => self.resize(self.size),
+                        _ => warn!("{e}"),
+                    }
                 }
-                UpdateMessage::Prepare => {
-                    self.prepare()
-                }
-                UpdateMessage::ModifyFrame(h, f )=> {
-                    let FrameMessage {
-                        size,
-                        color,
-                        ..
-                    } = f;
+                UpdateMessage::Prepare => self.prepare(),
+                UpdateMessage::ModifyFrame(h, f) => {
+                    let FrameMessage { size, color, .. } = f;
                     if let Some(size) = size {
                         self.frame_renderer.update(h.index(), &size);
                         if h.index() == 0 {
@@ -392,7 +395,7 @@ impl<'a> RenderManager<'a> {
                         self.frame_renderer.update_color(h.index(), color);
                     }
                 }
-                UpdateMessage::NewFrame(grid, x,y, f, frame_handle) => {
+                UpdateMessage::NewFrame(grid, x, y, f, frame_handle) => {
                     let FrameMessage {
                         size,
                         color,
@@ -401,13 +404,14 @@ impl<'a> RenderManager<'a> {
                     let size = size.unwrap_or(BBox::zeroed());
                     let color = color.unwrap_or([0; 4]);
                     let margin = margin.unwrap_or(MarginBox::zeroed());
-                    self.frame_renderer.add(crate::FrameData { 
-                        data: size, 
-                        margin: margin, 
-                        color: color, 
+                    self.frame_renderer.add(crate::FrameData {
+                        data: size,
+                        margin: margin,
+                        color: color,
                         camera_index: self.grid_to_frame_map[grid.index()].index() as u32,
                     });
-                    self.grid_renderer.add_frame(&mut self.frame_renderer, grid, frame_handle, x, y)
+                    self.grid_renderer
+                        .add_frame(&mut self.frame_renderer, grid, frame_handle, x, y)
                 }
                 UpdateMessage::NewFloatingFrame(f) => {
                     let FrameMessage {
@@ -418,15 +422,15 @@ impl<'a> RenderManager<'a> {
                     let size = size.unwrap_or(BBox::zeroed());
                     let color = color.unwrap_or([0; 4]);
                     let margin = margin.unwrap_or(MarginBox::zeroed());
-                    self.frame_renderer.add(crate::FrameData { 
-                        data: size, 
-                        margin: margin, 
-                        color: color, 
+                    self.frame_renderer.add(crate::FrameData {
+                        data: size,
+                        margin: margin,
+                        color: color,
                         camera_index: 0,
                     });
                 }
-                UpdateMessage::ModifyGrid(grid, g) => (),
-                UpdateMessage::NewGrid(grid_index, grid_builder) => {
+                UpdateMessage::ModifyGrid(_grid, _g) => (),
+                UpdateMessage::NewGrid(_grid_index, grid_builder) => {
                     self.grid_to_frame_map.push(grid_builder.parent());
                     self.grid_renderer.add(grid_builder.build());
                 }
@@ -466,19 +470,27 @@ pub fn run<App: State<Msg = bool> + Send>() {
             })
             .expect("Couldn't append canvas to document body.");
     }
-    
+
     let event_loop = EventLoop::new().unwrap();
-    
+
     let window = WindowBuilder::new().build(&event_loop).unwrap();
     let (send, recv) = mpsc::channel();
     let mut builder = ComponentBuilder::new(send.clone());
     let mut app: Component<App> = {
-        let mut builder = Builder::new(&mut builder, component::ComponentType::Floating(FrameHandle::new(0)));
-        builder.floating_frame(Rect { x: 0, y: 0, w: 400, h: 400 })
+        let mut builder = Builder::new(
+            &mut builder,
+            component::ComponentType::Floating(FrameHandle::new(0)),
+        );
+        builder.floating_frame(Rect {
+            x: 0,
+            y: 0,
+            w: 400,
+            h: 400,
+        })
     };
-    
+
     thread::scope(|s| {
-        let (queue,renderer) = pollster::block_on(RenderManager::new(&window, send.clone(), recv));
+        let (queue, renderer) = pollster::block_on(RenderManager::new(&window, send.clone(), recv));
         s.spawn(move || {
             renderer.run_forever();
         });
@@ -504,30 +516,39 @@ pub fn run<App: State<Msg = bool> + Send>() {
                                 send.send(UpdateMessage::Exit).unwrap();
                                 target.exit()
                             }
-                            WindowEvent::Resized(physical_size) => {
-                                queue.send(QualifiedUpdateMsg {
-                                    msg: crate::UpdateMsg::Frame(FrameMessage {
-                                        size: Some(Rect {
-                                            x:0,y:0, w:physical_size.width as i32, h:physical_size.height as i32
-                                        }.into()),
-                                        color: None,
-                                        margin: None,
-                                    }),
-                                    dst: component::ComponentType::Floating(FrameHandle::new(0))
-                                })
-                            }
+                            WindowEvent::Resized(physical_size) => queue.send(QualifiedUpdateMsg {
+                                msg: crate::UpdateMsg::Frame(FrameMessage {
+                                    size: Some(
+                                        Rect {
+                                            x: 0,
+                                            y: 0,
+                                            w: physical_size.width as i32,
+                                            h: physical_size.height as i32,
+                                        }
+                                        .into(),
+                                    ),
+                                    color: None,
+                                    margin: None,
+                                }),
+                                dst: component::ComponentType::Floating(FrameHandle::new(0)),
+                            }),
                             WindowEvent::ScaleFactorChanged { .. } => {
                                 ()
                                 //self.scale(*scale_factor);
                             }
                             WindowEvent::RedrawRequested => {
                                 send.send(UpdateMessage::Prepare).unwrap();
-                                
+
                                 send.send(UpdateMessage::Draw).unwrap();
-                                
                             }
-                            WindowEvent::MouseInput {  state, .. } => {
-                                app.update(matches!(state, ElementState::Pressed), &component::UpdateQueue::from_base(&queue, component::ComponentType::Floating(FrameHandle::new(0))));
+                            WindowEvent::MouseInput { state, .. } => {
+                                app.update(
+                                    matches!(state, ElementState::Pressed),
+                                    &component::UpdateQueue::from_base(
+                                        &queue,
+                                        component::ComponentType::Floating(FrameHandle::new(0)),
+                                    ),
+                                );
                             }
                             _ => {}
                         }

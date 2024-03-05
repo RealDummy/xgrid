@@ -1,6 +1,5 @@
 use std::{marker::PhantomData, num::NonZeroUsize};
 
-
 #[derive(Clone, Copy, Debug)]
 pub struct Handle<T> {
     index: NonZeroUsize,

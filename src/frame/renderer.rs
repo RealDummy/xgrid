@@ -2,8 +2,6 @@ use std::{mem::size_of, vec::Vec};
 
 use bytemuck::{Pod, Zeroable};
 
-
-use log::debug;
 use wgpu::{
     include_wgsl, BufferUsages, Device, MultisampleState, RenderPass, RenderPipeline,
     RenderPipelineDescriptor, SurfaceConfiguration,
@@ -161,7 +159,6 @@ impl FrameRenderer {
         }
     }
     pub fn prepare(&mut self, queue: &wgpu::Queue) {
-
         queue.write_buffer(
             &self.frame_buffer_handle,
             0,
@@ -217,5 +214,4 @@ impl FrameRenderer {
     pub fn get(&self, index: usize) -> &FrameData {
         &self.data[index]
     }
-
 }
