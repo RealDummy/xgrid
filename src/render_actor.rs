@@ -20,4 +20,5 @@ pub enum UpdateMessage {
     NewGrid(GridHandle, GridBuilder),
     Prepare,
     Draw,
+    Exit,
 }

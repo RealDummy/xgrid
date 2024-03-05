@@ -207,7 +207,6 @@ impl FrameRenderer {
         }
     }
     pub fn update_color(&mut self, index: usize, color: [u8; 4]) {
-        debug!("{index:?}");
         let frame = &mut self.data[index];
         frame.color = color;
         self.changed = match self.changed {

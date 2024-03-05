@@ -20,7 +20,6 @@ impl State for Div {
     }
     fn update(&mut self, msg: Self::Msg, queue: &UpdateQueue) {
         if self.down != msg {
-            debug!("{}", self.down);
             queue.push(UpdateMsg::Frame(FrameMessage{
                 color: Some(match msg {
                 true => Self::DC,

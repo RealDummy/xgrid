@@ -41,10 +41,10 @@ impl<'a> Builder<'a> {
         self.b.render_sender.send(UpdateMessage::NewFrame(grid,x,y, FrameMessage {
             size: None,
             margin: Some(Borders {
-                top: VUnit::new(10),
-                bottom: VUnit::new(10),
-                left: VUnit::new(10),
-                right: VUnit::new(10),
+                top: 10,
+                bottom: 10,
+                left: 10,
+                right: 10,
             }.into()),
             color: Some([255; 4])
         }, res)).unwrap();

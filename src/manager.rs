@@ -380,13 +380,13 @@ impl<'a> RenderManager<'a> {
                         ..
                     } = f;
                     if let Some(size) = size {
+                        self.frame_renderer.update(h.index(), &size);
                         if h.index() == 0 {
                             self.resize(PhysicalSize {
                                 width: size.w.pix() as u32,
                                 height: size.h.pix() as u32,
                             })
                         }
-                        self.frame_renderer.update(h.index(), &size);
                     }
                     if let Some(color) = color {
                         self.frame_renderer.update_color(h.index(), color);
@@ -429,6 +429,9 @@ impl<'a> RenderManager<'a> {
                 UpdateMessage::NewGrid(grid_index, grid_builder) => {
                     self.grid_to_frame_map.push(grid_builder.parent());
                     self.grid_renderer.add(grid_builder.build());
+                }
+                UpdateMessage::Exit => {
+                    break;
                 }
             }
         }
@@ -497,7 +500,10 @@ pub fn run<App: State<Msg = bool> + Send>() {
                                         ..
                                     },
                                 ..
-                            } => target.exit(),
+                            } => {
+                                send.send(UpdateMessage::Exit).unwrap();
+                                target.exit()
+                            }
                             WindowEvent::Resized(physical_size) => {
                                 queue.send(QualifiedUpdateMsg {
                                     msg: crate::UpdateMsg::Frame(FrameMessage {
