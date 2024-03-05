@@ -14,7 +14,7 @@ pub struct GridRenderer {
     data: Vec<GridData>,
 }
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Default, Debug)]
 pub struct GridT {}
 
 pub type GridHandle = Handle<GridT>;
@@ -44,8 +44,8 @@ impl GridRenderer {
         _frame_renderer: &mut FrameRenderer,
         grid_handle: GridHandle,
         frame_handle: FrameHandle,
-        x: XName,
-        y: YName,
+        x: Option<XName>,
+        y: Option<YName>,
     ) {
         match self.data[grid_handle.index()].add_frame(frame_handle, x, y) {
             Ok(()) => (),

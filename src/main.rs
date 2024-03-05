@@ -1,4 +1,5 @@
 
+use log::debug;
 use xgrid::*;
 
 #[derive(Clone, Copy, Debug)]
@@ -10,34 +11,55 @@ impl Div {
     const DC: [u8; 4] = [50; 4];
 }
 
-impl Update for Div {
+impl State for Div {
     type Msg = bool;
-    fn init() -> Self {
-        Self { down: false }
-    }
-    fn build(&self) {
-        // manager.get_frame_data(frame ).color = if self.down {Div::DC} else {Div::UC}
+    fn init(builder: &mut Builder) -> Self {
+        Self {
+            down: false,
+        }
     }
     fn update(&mut self, msg: Self::Msg, queue: &UpdateQueue) {
-        return {
-            let res = msg != self.down;
+        if self.down != msg {
+            debug!("{}", self.down);
+            queue.push(UpdateMsg::Frame(FrameMessage{
+                color: Some(match msg {
+                true => Self::DC,
+                false => Self::UC,
+                }),
+                ..FrameMessage::default()
+            }));
             self.down = msg;
-            res
-        };
+        }
     }
 }
 struct App {
-    states: [Div; 6],
+    states: [Component<Div>; 6],
 }
 
-impl Update for App {
-    type Msg = Interaction;
-    fn init() -> Self {
-        todo!()
+impl State for App {
+    type Msg = bool;
+    fn init(builder: &mut Builder) -> Self {
+        let mut g = builder.grid_builder();
+        let [yn] = g.heights()
+        .add_expanding(Fraction(1))
+        .assign();
+        let [x] = g.widths()
+        .add(Ratio(1.0))
+        .assign();
+        let g = builder.grid(g);
+        Self {
+            states: [
+                builder.frame(g, x, yn),
+                builder.frame(g, x, yn),
+                builder.frame(g, x, yn),
+                builder.frame(g, x, yn),
+                builder.frame(g, x, yn),
+                builder.frame(g, x, yn),
+            ]
+        }
     }
-    fn build(&self) {}
-    fn update(&mut self, _msg: Self::Msg) -> bool {
-        todo!()
+    fn update(&mut self, msg: Self::Msg, queue: &UpdateQueue) {
+        self.states.iter_mut().for_each(|s| s.update(msg, queue))
     }
 }
 

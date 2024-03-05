@@ -1,25 +1,38 @@
-use crate::manager::{BBox, MarginBox, Rect};
+use std::{process::exit, sync::mpsc};
 
-pub struct UpdateQueue {
-    
+use log::warn;
+
+use crate::{component::ComponentType, grid::{builder::GridDir, GridHandle}, handle, manager::{BBox, MarginBox, Rect}, render_actor::{FrameMessage, UpdateMessage}, units::UserUnits, FrameHandle};
+use crate::grid;
+
+use super::back::{QualifiedUpdateMsg, UpdateMsg, UpdateReciever, UpdateSend};
+
+
+#[derive(Clone)]
+pub struct  UpdateQueue {
+    sender: mpsc::Sender<UpdateMessage>,
 }
-
-pub enum Bounds {
-    Rel(BBox),
-    Abs(BBox),
-}
-
-pub enum Update {
-    Bounds(Bounds),
-    Margin(MarginBox),
-    Color([u8; 4]),
-}
-
 
 impl UpdateQueue {
-
-    pub fn push(&self, update: Update) -> &Self {
-        
-        self
+    pub fn new(sender: &mpsc::Sender<UpdateMessage>) -> Self {
+        Self {
+            sender: sender.clone()
+        }
+    }
+    pub fn send(&self, msg: QualifiedUpdateMsg) {
+        let QualifiedUpdateMsg {
+            msg,dst
+        } = msg;
+        use UpdateMsg::*;
+        match msg {
+            Frame(f) => {
+                if let Err(e) = self.sender.send(UpdateMessage::ModifyFrame(dst.frame(), f)) {
+                    warn!("{e}");
+                    exit(0);
+                }
+            },
+            _ => ()
+        }
     }
 }
+

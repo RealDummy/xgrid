@@ -7,10 +7,10 @@ use std::{
 };
 
 use bytemuck::{Pod, Zeroable};
-use log::{warn};
+use log::{debug, warn};
 use wgpu::{util::DeviceExt, SurfaceError};
 use winit::{
-    dpi::LogicalSize,
+    dpi::{LogicalSize, PhysicalSize},
     event::{ElementState, Event, KeyEvent, WindowEvent},
     event_loop::{EventLoop, EventLoopWindowTarget},
     keyboard::{Key, NamedKey},
@@ -18,13 +18,7 @@ use winit::{
 };
 
 use crate::{
-    component::{self, Update},
-    frame::{FrameHandle, FrameRenderer},
-    grid::{GridHandle, GridRenderer},
-    handle::{Handle, HandleLike},
-    render_actor::{FrameMessage, UpdateMessage},
-    units::VUnit,
-    ComponentHandle,
+    component::{self, Builder, ComponentBuilder, State}, frame::{FrameHandle, FrameRenderer}, grid::{builder, GridHandle, GridRenderer}, handle::{Handle, HandleLike}, render_actor::{FrameMessage, UpdateMessage}, units::VUnit, update_queue::{self, back::{Bounds, QualifiedUpdateMsg, UpdateReciever}, front}, Component, UpdateQueue
 };
 
 const VERTICES: &[Vertex] = &[
@@ -146,6 +140,7 @@ pub struct RenderManager<'a> {
     size: winit::dpi::PhysicalSize<u32>,
     index_render_target: wgpu::Texture,
     base_handle: FrameHandle,
+    msg_send: mpsc::Sender<UpdateMessage>,
     msg_recv: mpsc::Receiver<UpdateMessage>,
     grid_to_frame_map: Vec<FrameHandle>,
     config: wgpu::SurfaceConfiguration,
@@ -153,10 +148,11 @@ pub struct RenderManager<'a> {
     queue: wgpu::Queue,
     frame_renderer: FrameRenderer,
     grid_renderer: GridRenderer,
+    update_queue: update_queue::front::UpdateQueue,
 }
 
 impl<'a> RenderManager<'a> {
-    pub async fn new(window: &'a Window, recv: mpsc::Receiver<UpdateMessage>) -> Self {
+    pub async fn new(window: &'a Window, send: mpsc::Sender<UpdateMessage>, recv: mpsc::Receiver<UpdateMessage>) -> (update_queue::front::UpdateQueue, Self) {
         let size = LogicalSize::<i32> {
             width: 400,
             height: 400,
@@ -253,8 +249,8 @@ impl<'a> RenderManager<'a> {
             contents: bytemuck::cast_slice(VERTICES),
             usage: wgpu::BufferUsages::VERTEX,
         });
-
-        Self {
+        let update_queue = front::UpdateQueue::new(&send);
+        (update_queue.clone(), Self {
             frame_renderer: FrameRenderer::new(&device, &config),
             grid_renderer: GridRenderer::new(&device, &config),
             size: size.cast(),
@@ -264,64 +260,17 @@ impl<'a> RenderManager<'a> {
             window,
             msg_recv: recv,
             grid_to_frame_map: vec![],
-            // components: vec![],
             base_handle: window_handle,
             config,
             device,
             queue,
-        }
+            update_queue,
+            msg_send: send,
+        })
     }
     pub fn window(&self) -> FrameHandle {
         self.base_handle
     }
-
-    // pub fn add_frame<S: Update>(&mut self, grid_handle: GridHandle, x: XName, y: YName) -> ComponentHandle<S> {
-    //     self.frame_to_grid_handle_map.push(None);
-    //     let fh = self.render_sender.send(UpdateMessage::NewFrame(FrameMessage {
-    //         size: Some(BBox::zeroed()),
-    //         margin: Some(Borders {
-    //             top: 10,
-    //             bottom: 10,
-    //             left: 10,
-    //             right: 10,
-    //         }.into()),
-    //         color: Some([255, 255, 255, 25])
-    //     }));
-    //     let fh = FrameHandle::new(self.frame_to_grid_handle_map.len() - 1);
-    //     let comp = ComponentHandle::new(fh, S::init(fh, self));
-
-    //     // self.components.push(comp.as_frame());
-    //     comp
-    // }
-    // pub fn create_grid_in(&mut self, parent_frame: FrameHandle) -> GridBuilder {
-    //     GridBuilder::new(parent_frame)
-    // }
-
-    // pub(crate) fn add_grid(&mut self, frame: FrameHandle, grid: GridBuilder) -> GridHandle {
-    //     self.render_sender.send(UpdateMessage::NewGrid(grid));
-    //     let grid_handle = GridHandle::new(self.grid_count);
-    //     self.frame_to_grid_handle_map[frame.index()] = Some(grid_handle);
-    //     self.grid_count += 1;
-    //     return grid_handle;
-    // }
-
-    // fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
-    //     if new_size.width > 0 && new_size.height > 0 {
-    //         self.size = new_size.cast();
-    //         self.config.width = new_size.width;
-    //         self.config.height = new_size.height;
-    //         self.surface.configure(&self.device, &self.config);
-    //         let size = new_size.to_logical(self.window.scale_factor());
-    //         let cam = Rect {
-    //             x: 0,
-    //             y: 0,
-    //             w: size.width,
-    //             h: size.height,
-    //         }
-    //         .into();
-    //         self.update_frame(self.base_handle, cam);
-    //     }
-    // }
 
     pub fn render(&'a self) -> Result<(), SurfaceError> {
         let output = self.surface.get_current_texture()?;
@@ -354,6 +303,7 @@ impl<'a> RenderManager<'a> {
                 timestamp_writes: None,
             });
             render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+            self.frame_renderer.render(&mut render_pass);
         }
         {
             let index_view = self
@@ -379,6 +329,8 @@ impl<'a> RenderManager<'a> {
                 timestamp_writes: None,
             });
             index_render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+            self.frame_renderer.render_index(&mut index_render_pass);
+
         }
         self.queue.submit(iter::once(encoder.finish()));
         output.present();
@@ -386,16 +338,37 @@ impl<'a> RenderManager<'a> {
     }
     fn prepare(&mut self) {
         self.grid_renderer.prepare(&mut self.frame_renderer, &self.queue);
+        self.frame_renderer.prepare( &self.queue);
+
     }
     fn input(&self, _window_event: &WindowEvent) -> bool {
         false
     }
+    fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
+        if new_size.width > 0 && new_size.height > 0 {
+            self.size = new_size;
+            self.config.width = new_size.width;
+            self.config.height = new_size.height;
+            self.surface.configure(&self.device, &self.config);
+        }
+    }
     pub fn run_forever(mut self) {
         loop {
             let msg = self.msg_recv.recv().expect("update message recv err");
+            //debug!("{msg:?}");
             match msg {
                 UpdateMessage::Draw => {
-                    self.render().expect("render err");
+                        let rr = self.render();
+                        self.window.request_redraw();
+                        let Err(e) = rr else {
+                            continue;
+                        };
+                        match e {
+                            SurfaceError::Lost => {
+                                self.resize(self.size)
+                            },
+                            _ => warn!("{e}"),
+                        }
                 }
                 UpdateMessage::Prepare => {
                     self.prepare()
@@ -407,13 +380,19 @@ impl<'a> RenderManager<'a> {
                         ..
                     } = f;
                     if let Some(size) = size {
-                        self.frame_renderer.update(h, &size);
+                        if h.index() == 0 {
+                            self.resize(PhysicalSize {
+                                width: size.w.pix() as u32,
+                                height: size.h.pix() as u32,
+                            })
+                        }
+                        self.frame_renderer.update(h.index(), &size);
                     }
                     if let Some(color) = color {
-                        self.frame_renderer.update_color(h, color);
+                        self.frame_renderer.update_color(h.index(), color);
                     }
                 }
-                UpdateMessage::NewFrame(grid, f) => {
+                UpdateMessage::NewFrame(grid, x,y, f, frame_handle) => {
                     let FrameMessage {
                         size,
                         color,
@@ -428,17 +407,35 @@ impl<'a> RenderManager<'a> {
                         color: color, 
                         camera_index: self.grid_to_frame_map[grid.index()].index() as u32,
                     });
+                    self.grid_renderer.add_frame(&mut self.frame_renderer, grid, frame_handle, x, y)
+                }
+                UpdateMessage::NewFloatingFrame(f) => {
+                    let FrameMessage {
+                        size,
+                        color,
+                        margin,
+                    } = f;
+                    let size = size.unwrap_or(BBox::zeroed());
+                    let color = color.unwrap_or([0; 4]);
+                    let margin = margin.unwrap_or(MarginBox::zeroed());
+                    self.frame_renderer.add(crate::FrameData { 
+                        data: size, 
+                        margin: margin, 
+                        color: color, 
+                        camera_index: 0,
+                    });
                 }
                 UpdateMessage::ModifyGrid(grid, g) => (),
-                UpdateMessage::NewGrid(grid_builder) => {
-                    self.grid_to_frame_map[grid_builder.index().index()] = grid_builder.parent()
+                UpdateMessage::NewGrid(grid_index, grid_builder) => {
+                    self.grid_to_frame_map.push(grid_builder.parent());
+                    self.grid_renderer.add(grid_builder.build());
                 }
             }
         }
     }
 }
 
-pub fn run<App: Update<Msg = component::Interaction> + Send>(app: App) {
+pub fn run<App: State<Msg = bool> + Send>() {
     cfg_if::cfg_if! {
         if #[cfg(target_arch = "wasm32")] {
             std::panic::set_hook(Box::new(console_error_panic_hook::hook));
@@ -466,14 +463,21 @@ pub fn run<App: Update<Msg = component::Interaction> + Send>(app: App) {
             })
             .expect("Couldn't append canvas to document body.");
     }
+    
     let event_loop = EventLoop::new().unwrap();
-
+    
     let window = WindowBuilder::new().build(&event_loop).unwrap();
-    let (_send, recv) = mpsc::channel();
+    let (send, recv) = mpsc::channel();
+    let mut builder = ComponentBuilder::new(send.clone());
+    let mut app: Component<App> = {
+        let mut builder = Builder::new(&mut builder, component::ComponentType::Floating(FrameHandle::new(0)));
+        builder.floating_frame(Rect { x: 0, y: 0, w: 400, h: 400 })
+    };
+    
     thread::scope(|s| {
-        let updates = pollster::block_on(RenderManager::new(&window, recv));
+        let (queue,renderer) = pollster::block_on(RenderManager::new(&window, send.clone(), recv));
         s.spawn(move || {
-            updates.run_forever();
+            renderer.run_forever();
         });
 
         let exit_status =
@@ -494,32 +498,30 @@ pub fn run<App: Update<Msg = component::Interaction> + Send>(app: App) {
                                     },
                                 ..
                             } => target.exit(),
-                            WindowEvent::Resized(_physical_size) => {}
+                            WindowEvent::Resized(physical_size) => {
+                                queue.send(QualifiedUpdateMsg {
+                                    msg: crate::UpdateMsg::Frame(FrameMessage {
+                                        size: Some(Rect {
+                                            x:0,y:0, w:physical_size.width as i32, h:physical_size.height as i32
+                                        }.into()),
+                                        color: None,
+                                        margin: None,
+                                    }),
+                                    dst: component::ComponentType::Floating(FrameHandle::new(0))
+                                })
+                            }
                             WindowEvent::ScaleFactorChanged { .. } => {
                                 ()
                                 //self.scale(*scale_factor);
                             }
                             WindowEvent::RedrawRequested => {
-                                let res = {
-                                    Ok(()) //updates.render()
-                                };
-                                match res {
-                                    Ok(_) => {}
-                                    // Reconfigure the surface if it's lost or outdated
-                                    Err(
-                                        wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated,
-                                    ) => {}
-                                    // The system is out of memory, we should probably quit
-                                    Err(wgpu::SurfaceError::OutOfMemory) => target.exit(),
-                                    // We're ignoring timeouts
-                                    Err(wgpu::SurfaceError::Timeout) => {
-                                        log::warn!("Surface timeout")
-                                    }
-                                }
-                                //updates.window.request_redraw();
+                                send.send(UpdateMessage::Prepare).unwrap();
+                                
+                                send.send(UpdateMessage::Draw).unwrap();
+                                
                             }
-                            WindowEvent::MouseInput {  .. } => {
-                                //app.update(Interaction::Click(matches!(state, ElementState::Pressed)), updates.window(), &mut updates);
+                            WindowEvent::MouseInput {  state, .. } => {
+                                app.update(matches!(state, ElementState::Pressed), &component::UpdateQueue::from_base(&queue, component::ComponentType::Floating(FrameHandle::new(0))));
                             }
                             _ => {}
                         }

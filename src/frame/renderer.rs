@@ -3,6 +3,7 @@ use std::{mem::size_of, vec::Vec};
 use bytemuck::{Pod, Zeroable};
 
 
+use log::debug;
 use wgpu::{
     include_wgsl, BufferUsages, Device, MultisampleState, RenderPass, RenderPipeline,
     RenderPipelineDescriptor, SurfaceConfiguration,
@@ -160,6 +161,7 @@ impl FrameRenderer {
         }
     }
     pub fn prepare(&mut self, queue: &wgpu::Queue) {
+
         queue.write_buffer(
             &self.frame_buffer_handle,
             0,
@@ -173,45 +175,48 @@ impl FrameRenderer {
 
         self.changed = None;
     }
-    pub fn render<'a: 'rp, 'rp>(&'a self, render_pass: &mut RenderPass<'rp>) {
-        //debug!("frames: {:?}", self.data);
-        render_pass.set_pipeline(&self.pipeline);
+    fn render_pipeline<'a: 'rp, 'rp>(&'a self, render_pass: &mut RenderPass<'rp>) {
         render_pass.set_vertex_buffer(1, self.frame_buffer_handle.slice(..));
         render_pass.set_bind_group(0, &self.camera_bg_handle, &[]);
         render_pass.draw(0..4 as u32, 0..self.data.len() as u32);
+    }
+    pub fn render<'a: 'rp, 'rp>(&'a self, render_pass: &mut RenderPass<'rp>) {
+        //debug!("frames: {:?}", self.data);
+        render_pass.set_pipeline(&self.pipeline);
+        self.render_pipeline(render_pass);
     }
 
     pub fn render_index<'rp>(&'rp self, render_pass: &mut RenderPass<'rp>) {
         //debug!("frames: {:?}", self.data);
         render_pass.set_pipeline(&self.index_pipeline);
-        render_pass.set_vertex_buffer(1, self.frame_buffer_handle.slice(..));
-        render_pass.set_bind_group(0, &self.camera_bg_handle, &[]);
-        render_pass.draw(0..4 as u32, 0..self.data.len() as u32);
+        self.render_pipeline(render_pass);
     }
-    pub fn add(&mut self, frame: FrameData) -> FrameHandle {
+    pub fn add(&mut self, frame: FrameData) -> usize {
         self.camera_data.push(Camera { bbox: frame.data });
         self.data.push(frame);
         self.changed = Some(self.data.len() - 1);
-        return FrameHandle::new(self.data.len() - 1);
+        return self.data.len() - 1;
     }
-    pub fn update(&mut self, handle: FrameHandle, bounds: &BBox) {
-        let frame: &mut FrameData = &mut self.data[handle.index()];
+    pub fn update(&mut self, index: usize, bounds: &BBox) {
+        let frame: &mut FrameData = &mut self.data[index];
         frame.data = *bounds;
-        self.camera_data[handle.index()].bbox = *bounds;
+        self.camera_data[index].bbox = *bounds;
         self.changed = match self.changed {
-            None => Some(handle.index()),
-            Some(u) => Some(usize::max(u, handle.index())),
+            None => Some(index),
+            Some(u) => Some(usize::max(u, index)),
         }
     }
-    pub fn update_color(&mut self, handle: FrameHandle, color: [u8; 4]) {
-        let frame = &mut self.data[handle.index()];
+    pub fn update_color(&mut self, index: usize, color: [u8; 4]) {
+        debug!("{index:?}");
+        let frame = &mut self.data[index];
         frame.color = color;
         self.changed = match self.changed {
-            None => Some(handle.index()),
-            Some(u) => Some(usize::max(u, handle.index())),
+            None => Some(index),
+            Some(u) => Some(usize::max(u, index)),
         }
     }
-    pub fn get<'a>(&'a mut self, handle: FrameHandle) -> &'a mut FrameData {
-        &mut self.data[handle.index()]
+    pub fn get(&self, index: usize) -> &FrameData {
+        &self.data[index]
     }
+
 }

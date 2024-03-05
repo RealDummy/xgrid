@@ -139,11 +139,11 @@ impl GridData {
         return self.parent_frame_handle;
     }
     pub fn update(&mut self, frames: &mut FrameRenderer) {
-        let parent_box = frames.get(self.parent_frame_handle).data;
+        let parent = frames.get(self.parent_frame_handle.index());
         debug!(
             "grid {} box {:?}",
             self.parent_frame_handle.index(),
-            parent_box
+            parent
         );
         self.handles.sort_by_key(|h| (h.major, h.cross));
         let BBox {
@@ -152,12 +152,12 @@ impl GridData {
             w: major_len,
             h: cross_len,
         } = match self.expand_dir {
-            Some(GridExpandDir::X) => parent_box,
+            Some(GridExpandDir::X) => parent.data,
             _ => BBox {
-                x: parent_box.y,
-                y: parent_box.x,
-                w: parent_box.h,
-                h: parent_box.w,
+                x: parent.data.y,
+                y: parent.data.x,
+                w: parent.data.h,
+                h: parent.data.w,
             },
         };
         let cross_solve: Vec<_> = solve_spacer(
@@ -202,7 +202,7 @@ impl GridData {
                     .for_each(|loc| {
                         debug!("frame: {} {:?}", loc.handle.index(), bounds);
                         //debug!("frame {}: {:?} {}", loc.handle.index(), bounds, solve.count);
-                        frames.update(loc.handle, &bounds);
+                        frames.update(loc.handle.index(), &bounds);
                     })
             })
         }
@@ -246,7 +246,7 @@ impl GridData {
         });
         self.find_next_slot(candidates, &self.cross_spacer.as_slice(), |h| h.cross)
     }
-    pub fn add_frame(&mut self, handle: FrameHandle, x: XName, y: YName) -> Result<(), ()> {
+    pub fn add_frame(&mut self, handle: FrameHandle, x: Option<XName>, y: Option<YName>) -> Result<(), ()> {
         let (major_index, cross_index) = match self.expand_dir {
             Some(GridExpandDir::X) => (x.index(), y.index()),
             _ => (y.index(), x.index()),

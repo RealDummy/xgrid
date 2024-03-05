@@ -8,26 +8,26 @@ use crate::{
 
 use super::{data::{GridData, GridExpandDir}, GridHandle};
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum SpacerUnit {
     Unit(UserUnits),
     Repeat(UserUnits),
 }
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Default, Debug)]
 pub struct Width {}
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Default, Debug)]
 pub struct Height {}
 
-pub type XName = Option<Handle<Width>>;
-pub type YName = Option<Handle<Height>>;
+pub type XName = Handle<Width>;
+pub type YName = Handle<Height>;
 
-pub trait Dir: Copy + Clone + Default {
+pub trait GridDir: Copy + Clone + Default {
     fn dir() -> GridExpandDir;
     fn new(i: Option<usize>) -> Self;
 }
 
-impl Dir for XName {
+impl GridDir for Option<XName> {
     fn dir() -> GridExpandDir {
         GridExpandDir::X
     }
@@ -38,7 +38,7 @@ impl Dir for XName {
         }
     }
 }
-impl Dir for YName {
+impl GridDir for Option<YName> {
     fn dir() -> GridExpandDir {
         GridExpandDir::Y
     }
@@ -52,20 +52,21 @@ impl Dir for YName {
 
 pub(crate) type GridSpacer = Vec<SpacerUnit>;
 
+#[derive(Debug)]
 pub struct GridBuilder {
     spacers: [GridSpacer; 2],
     expands: Option<GridExpandDir>,
     parent: FrameHandle,
-    index: GridHandle,
 }
 
-pub struct SpacerBuilder<'b, const EXPANDS: bool, T: Dir + FallableHandleLike> {
+
+pub struct SpacerBuilder<'b, const EXPANDS: bool, T: GridDir + FallableHandleLike> {
     grid_builder: &'b mut GridBuilder,
     spacer: GridSpacer,
     _dir: PhantomData<T>,
 }
 
-impl<'b, const EXPANDS: bool, T: Dir + FallableHandleLike> SpacerBuilder<'b, EXPANDS, T> {
+impl<'b, const EXPANDS: bool, T: GridDir + FallableHandleLike> SpacerBuilder<'b, EXPANDS, T> {
     fn new(grid_builder: &'b mut GridBuilder) -> Self {
         Self {
             grid_builder: grid_builder,
@@ -76,6 +77,13 @@ impl<'b, const EXPANDS: bool, T: Dir + FallableHandleLike> SpacerBuilder<'b, EXP
     pub fn add(mut self, u: UserUnits) -> Self {
         self.spacer.push(SpacerUnit::Unit(u.clone()));
         self
+    }
+    
+    pub fn build(self) {
+        self.grid_builder.spacers[match T::dir() {
+            GridExpandDir::X => 0,
+            _ => 1,
+        }] = self.spacer;
     }
 
     pub fn assign<const N: usize>(self) -> [T; N] {
@@ -90,15 +98,12 @@ impl<'b, const EXPANDS: bool, T: Dir + FallableHandleLike> SpacerBuilder<'b, EXP
             }
             n => *n,
         };
-        self.grid_builder.spacers[match T::dir() {
-            GridExpandDir::X => 0,
-            _ => 1,
-        }] = self.spacer;
+        self.build();
         res
     }
 }
 
-impl<'b, T: Dir + FallableHandleLike> SpacerBuilder<'b, false, T> {
+impl<'b, T: GridDir + FallableHandleLike> SpacerBuilder<'b, false, T> {
     pub fn add_expanding(mut self: Self, u: UserUnits) -> SpacerBuilder<'b, true, T> {
         self.spacer.push(SpacerUnit::Repeat(u.clone()));
         SpacerBuilder {
@@ -109,23 +114,19 @@ impl<'b, T: Dir + FallableHandleLike> SpacerBuilder<'b, false, T> {
     }
 }
 
-pub type WidthSpacerBuilder<'a, const EXPANDS: bool> = SpacerBuilder<'a, EXPANDS, XName>;
-pub type HeightSpacerBuilder<'a, const EXPANDS: bool> = SpacerBuilder<'a, EXPANDS, YName>;
+pub type WidthSpacerBuilder<'a, const EXPANDS: bool> = SpacerBuilder<'a, EXPANDS, Option<XName>>;
+pub type HeightSpacerBuilder<'a, const EXPANDS: bool> = SpacerBuilder<'a, EXPANDS, Option<YName>>;
 
 impl GridBuilder {
-    pub(super) fn new(parent: FrameHandle, index: GridHandle) -> GridBuilder {
+    pub(crate) fn new(parent: FrameHandle) -> GridBuilder {
         GridBuilder {
             spacers: [GridSpacer::new(), GridSpacer::new()],
             expands: None,
             parent,
-            index,
         }
     }
     pub(crate) fn parent(&self) -> FrameHandle {
         self.parent
-    }
-    pub(crate) fn index(&self) -> GridHandle {
-        self.index
     }
     pub fn widths(&mut self) -> WidthSpacerBuilder<false> {
         WidthSpacerBuilder::new(self)
