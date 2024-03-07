@@ -12,6 +12,7 @@ pub(crate) mod render_actor;
 pub(crate) mod units;
 pub(crate) mod update_queue;
 pub(crate) mod observer;
+pub(crate) mod events;
 
 
 pub use component::{Builder, Component, UpdateQueue};

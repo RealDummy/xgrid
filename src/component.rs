@@ -1,30 +1,25 @@
-use std::{cell::RefCell, fmt::Debug, rc::Rc, sync::{mpsc, Arc}};
+use std::{cell::RefCell, fmt::Debug, sync::{mpsc, Arc}};
 
 use crate::{
-    frame::FrameHandle,
-    grid::{GridBuilder, GridHandle, XName, YName},
-    handle::HandleLike,
-    manager::{BBox, Borders, Rect},
-    render_actor::{FrameMessage, UpdateMessage},
-    update_queue::{self, back::QualifiedUpdateMsg},
-    UpdateMsg,
+    events::{KeyboardEvent, MouseEvent}, frame::FrameHandle, grid::{GridBuilder, GridHandle, XName, YName}, handle::HandleLike, manager::{BBox, Borders, Rect}, render_actor::{FrameMessage, UpdateMessage}, update_queue::{self, back::QualifiedUpdateMsg}, EventDispatcher, UpdateMsg
 };
 
+struct SystemEvents {
+    mouse_dispatcher: EventDispatcher<MouseEvent>,
+    keyboard_dispatcher: EventDispatcher<KeyboardEvent>, 
+}
 pub struct ComponentBuilder {
     render_sender: mpsc::Sender<UpdateMessage>,
     frame_count: usize,
     grid_count: usize,
+    dispatcher: SystemEvents,
 }
 
-pub struct GlobalState {
-
-}
-
-impl State for GlobalState {
+impl State for () {
     type Msg = ();
     type Param = ();
     fn init<P: State>(_builder: &mut Builder<P>, _param: Self::Param) -> Self {
-        Self {}
+        ()
     }
     fn update(&mut self, _msg: Self::Msg, _queue: &UpdateQueue) {}
 }
@@ -38,6 +33,10 @@ impl ComponentBuilder {
             render_sender: send,
             frame_count: 0,
             grid_count: 0,
+            dispatcher: SystemEvents {
+                mouse_dispatcher: EventDispatcher::new(),
+                keyboard_dispatcher: EventDispatcher::new(),
+            }
         }
     }
     pub fn send_frame(&mut self, grid: GridHandle, x: Option<XName>, y: Option<YName>) -> FrameHandle {
@@ -98,9 +97,9 @@ impl ComponentBuilder {
         Component::new(App::init(&mut b, () ), ComponentType::Floating(res))
     }
 }
-impl<'a> Builder<'a, GlobalState> {
+impl<'a> Builder<'a, ()> {
     pub(crate) fn first(b: &'a mut ComponentBuilder) -> Self {
-        Self { b, parent: Component::new(GlobalState {}, ComponentType::Floating(FrameHandle::new(0))) }
+        Self { b, parent: Component::new((), ComponentType::Floating(FrameHandle::new(0))) }
     }
 }
 
