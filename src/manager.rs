@@ -1,22 +1,22 @@
 use std::{
     iter,
-    sync::mpsc,
-    thread::{self},
+    sync::{mpsc, Arc, Barrier},
+    thread,
 };
 
 use bytemuck::{Pod, Zeroable};
-use log::warn;
+use log::{debug, warn};
 use wgpu::{util::DeviceExt, SurfaceError};
 use winit::{
     dpi::{LogicalSize, PhysicalSize},
     event::{ElementState, Event, KeyEvent, WindowEvent},
-    event_loop::{EventLoop, EventLoopWindowTarget},
+    event_loop::{EventLoop, EventLoopProxy, EventLoopWindowTarget},
     keyboard::{Key, NamedKey},
     window::{Window, WindowBuilder},
 };
 
 use crate::{
-    component::{self, ComponentBuilder, State}, events::{KeyboardEvent, MouseEvent}, frame::{FrameHandle, FrameRenderer}, grid::GridRenderer, handle::HandleLike, render_actor::{FrameMessage, UpdateMessage}, units::VUnit, update_queue::{self, back::QualifiedUpdateMsg, front}, Component, EventDispatcher
+    component::{self, ComponentBuilder, State}, events::{KeyboardEvent, MouseEvent}, frame::{FrameHandle, FrameRenderer}, grid::GridRenderer, handle::HandleLike, render_actor::{FrameMessage, UpdateMessage}, units::VUnit, update_queue::{self, back::QualifiedUpdateMsg, front::{self, UpdateQueue}}, ButtonState, Component, EventDispatcher, MouseButton, Subscriber
 };
 
 const VERTICES: &[Vertex] = &[
@@ -146,6 +146,7 @@ pub struct RenderManager<'a> {
     queue: wgpu::Queue,
     frame_renderer: FrameRenderer,
     grid_renderer: GridRenderer,
+    proxy: EventLoopProxy<()>,
 }
 
 impl<'a> RenderManager<'a> {
@@ -153,6 +154,7 @@ impl<'a> RenderManager<'a> {
         window: &'a Window,
         send: mpsc::Sender<UpdateMessage>,
         recv: mpsc::Receiver<UpdateMessage>,
+        proxy: winit::event_loop::EventLoopProxy<()>,
     ) -> (update_queue::front::UpdateQueue, Self) {
         let size = LogicalSize::<i32> {
             width: 400,
@@ -219,7 +221,7 @@ impl<'a> RenderManager<'a> {
             present_mode: *surface_caps
                 .present_modes
                 .iter()
-                .find(|&&e| e == wgpu::PresentMode::Immediate)
+                .find(|&&e| e == wgpu::PresentMode::AutoVsync)
                 .unwrap_or(&surface_caps.present_modes[0]),
             alpha_mode: surface_caps.alpha_modes[0],
             view_formats: vec![],
@@ -268,6 +270,7 @@ impl<'a> RenderManager<'a> {
                 device,
                 queue,
                 msg_send: send,
+                proxy,
             },
         )
     }
@@ -335,7 +338,9 @@ impl<'a> RenderManager<'a> {
             self.frame_renderer.render_index(&mut index_render_pass);
         }
         self.queue.submit(iter::once(encoder.finish()));
+        self.window.pre_present_notify();
         output.present();
+
         Ok(())
     }
     fn prepare(&mut self) {
@@ -351,21 +356,25 @@ impl<'a> RenderManager<'a> {
             self.surface.configure(&self.device, &self.config);
         }
     }
-    pub fn run_forever(mut self) {
+    pub fn run_forever(mut self, barrier: Arc<Barrier>) {
+        let mut count = 0;
         loop {
+            count += 1;
             let msg = self.msg_recv.recv().expect("update message recv err");
-            //debug!("{msg:?}");
+            if let UpdateMessage::Exit = msg {
+            }
             match msg {
                 UpdateMessage::Draw => {
                     let rr = self.render();
-                    self.window.request_redraw();
                     let Err(e) = rr else {
+                        self.window.request_redraw();
                         continue;
                     };
                     match e {
                         SurfaceError::Lost => self.resize(self.size),
                         _ => warn!("{e}"),
                     }
+
                 }
                 UpdateMessage::Prepare => self.prepare(),
                 UpdateMessage::ModifyFrame(h, f) => {
@@ -423,12 +432,15 @@ impl<'a> RenderManager<'a> {
                     self.grid_renderer.add(grid_builder.build());
                 }
                 UpdateMessage::Exit => {
+                    self.proxy.send_event(()).unwrap();
                     break;
                 }
             }
-        }
+        };
     }
 }
+
+
 
 pub fn run<App: State<Param = ()>>() {
     cfg_if::cfg_if! {
@@ -460,25 +472,24 @@ pub fn run<App: State<Param = ()>>() {
     }
 
     let event_loop = EventLoop::new().unwrap();
-
+    let proxy = event_loop.create_proxy();
     let window = WindowBuilder::new().build(&event_loop).unwrap();
     let (send, recv) = mpsc::channel();
-    let mut builder = ComponentBuilder::new(send.clone());
-    let mut app: Component<App> = builder.send_app(Rect {
-        x: 0,
-        y: 0,
-        w: 400,
-        h: 400,
-    }.into());
-
-
-
+    let barrier = Arc::new(Barrier::new(2));
+    
     thread::scope(|s| {
-        let (queue, renderer) = pollster::block_on(RenderManager::new(&window, send.clone(), recv));
+        let (queue, renderer) = pollster::block_on(RenderManager::new(&window, send.clone(), recv, proxy));
+        let mut builder = ComponentBuilder::new(send.clone(), queue.clone());
+        let barrier_ref = &barrier;
         s.spawn(move || {
-            renderer.run_forever();
+            renderer.run_forever(Arc::clone(barrier_ref));
         });
-
+        let mut app: Component<App> = builder.send_app(Rect {
+            x: 0,
+            y: 0,
+            w: 400,
+            h: 400,
+        }.into());
         let exit_status =
             event_loop.run(move |event: Event<_>, target: &EventLoopWindowTarget<_>| {
                 match event {
@@ -498,7 +509,6 @@ pub fn run<App: State<Param = ()>>() {
                                 ..
                             } => {
                                 send.send(UpdateMessage::Exit).unwrap();
-                                target.exit()
                             }
                             WindowEvent::Resized(physical_size) => queue.send(QualifiedUpdateMsg {
                                 msg: crate::UpdateMsg::Frame(FrameMessage {
@@ -524,12 +534,19 @@ pub fn run<App: State<Param = ()>>() {
                                 send.send(UpdateMessage::Prepare).unwrap();
 
                                 send.send(UpdateMessage::Draw).unwrap();
+
                             }
                             WindowEvent::MouseInput { state, .. } => {
-                                
+                                builder.emit_mouse(MouseEvent::Click(MouseButton::Left(match state {
+                                    ElementState::Pressed => ButtonState::Pressed,
+                                    ElementState::Released => ButtonState::Released,
+                                })));
                             }
                             _ => {}
                         }
+                    }
+                    Event::UserEvent(()) => {
+                        target.exit();
                     }
                     _ => {}
                 }

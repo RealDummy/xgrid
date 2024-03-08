@@ -58,5 +58,5 @@ impl FrameData {
             ],
         }
     }
-    pub const BUFFER_INIT_BYTE_COUNT: u64 = 100 * mem::size_of::<Self>() as u64;
+    pub const BUFFER_INIT_BYTE_COUNT: u64 = 10000 * mem::size_of::<Self>() as u64;
 }

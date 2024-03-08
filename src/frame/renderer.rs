@@ -41,7 +41,7 @@ impl FrameRenderer {
         });
         let camera_buffer_handle = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("camera buffer"),
-            size: (size_of::<Camera>() * 1000) as u64,
+            size: (size_of::<Camera>() * 10000) as u64,
             usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });

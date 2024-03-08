@@ -1,24 +1,33 @@
 use std::{cell::RefCell, fmt::Debug, sync::{mpsc, Arc}};
 
 use crate::{
-    events::{KeyboardEvent, MouseEvent}, frame::FrameHandle, grid::{GridBuilder, GridHandle, XName, YName}, handle::HandleLike, manager::{BBox, Borders, Rect}, render_actor::{FrameMessage, UpdateMessage}, update_queue::{self, back::QualifiedUpdateMsg}, EventDispatcher, UpdateMsg
+    events::{KeyboardEvent, MouseEvent}, frame::FrameHandle, grid::{GridBuilder, GridHandle, XName, YName}, handle::HandleLike, manager::{BBox, Borders, Rect}, observer, render_actor::{FrameMessage, UpdateMessage}, update_queue::{self, back::QualifiedUpdateMsg, front}, EventDispatcher, Subscriber, UpdateMsg
 };
 
-struct SystemEvents {
+pub struct SystemEvents {
     mouse_dispatcher: EventDispatcher<MouseEvent>,
-    keyboard_dispatcher: EventDispatcher<KeyboardEvent>, 
+    keyboard_dispatcher: EventDispatcher<KeyboardEvent>,
+}
+impl SystemEvents {
+    pub fn add_mouse_observer<C: State + Subscriber<MouseEvent> + 'static>(&mut self, component: &Component<C>) {
+        self.mouse_dispatcher.register(component)
+    }
+    pub fn add_keyboard_observer<C: State + Subscriber<KeyboardEvent> + 'static>(&mut self, component: &Component<C>) {
+        self.keyboard_dispatcher.register(component)
+    }
 }
 pub struct ComponentBuilder {
     render_sender: mpsc::Sender<UpdateMessage>,
     frame_count: usize,
     grid_count: usize,
     dispatcher: SystemEvents,
+    queue: front::UpdateQueue,
 }
 
 impl State for () {
     type Msg = ();
     type Param = ();
-    fn init<P: State>(_builder: &mut Builder<P>, _param: Self::Param) -> Self {
+    fn init<P: State>(_builder: &mut Builder<P>, _param: &Self::Param) -> Self {
         ()
     }
     fn update(&mut self, _msg: Self::Msg, _queue: &UpdateQueue) {}
@@ -28,15 +37,16 @@ pub struct Builder<'a, C: State> {
     parent: Component<C>,
 }
 impl ComponentBuilder {
-    pub fn new(send: mpsc::Sender<UpdateMessage>) -> Self {
+    pub fn new(send: mpsc::Sender<UpdateMessage>, queue: front::UpdateQueue) -> Self {
         ComponentBuilder {
             render_sender: send,
             frame_count: 0,
             grid_count: 0,
             dispatcher: SystemEvents {
-                mouse_dispatcher: EventDispatcher::new(),
-                keyboard_dispatcher: EventDispatcher::new(),
-            }
+                mouse_dispatcher: EventDispatcher::new(&queue),
+                keyboard_dispatcher: EventDispatcher::new(&queue),
+            },
+            queue,
         }
     }
     pub fn send_frame(&mut self, grid: GridHandle, x: Option<XName>, y: Option<YName>) -> FrameHandle {
@@ -94,7 +104,12 @@ impl ComponentBuilder {
         assert!(self.frame_count == 0);
         let res = self.send_floating(size);
         let mut b = Builder::first(self);
-        Component::new(App::init(&mut b, () ), ComponentType::Floating(res))
+        let app = Component::new(App::init(&mut b, &() ), ComponentType::Floating(res));
+        App::after_init(&app, &mut self.dispatcher, &());
+        return app;
+    }
+    pub(crate) fn emit_mouse(&self, event: MouseEvent) {
+        self.dispatcher.mouse_dispatcher.emit(event)
     }
 }
 impl<'a> Builder<'a, ()> {
@@ -116,11 +131,13 @@ impl<'a, C: State> Builder<'a, C> {
         y: Option<YName>,
     ) -> Component<T> {
         let res = self.b.send_frame(grid, x, y);
-        Component::new(T::init(&mut Builder::new(self.b, Component::clone(&self.parent)), param), ComponentType::GridMember(res, grid))
+        let me = Component::new(T::init(&mut Builder::new(self.b, Component::clone(&self.parent)), &param), ComponentType::GridMember(res, grid));
+        T::after_init(&me,&mut self.b.dispatcher, &param);
+        return me;
     }
     pub fn floating_frame(&mut self, param: C::Param, size: Rect<i32>) -> Component<C> {
         let res = self.b.send_floating(size.into());
-        Component::new(C::init(self, param), ComponentType::Floating(res))
+        Component::new(C::init(self, &param), ComponentType::Floating(res))
     }
     pub fn grid_builder(&mut self) -> GridBuilder {
         let parent = match self.parent.handle {
@@ -132,6 +149,9 @@ impl<'a, C: State> Builder<'a, C> {
     pub fn grid(&mut self, grid: GridBuilder) -> GridHandle {
         let res = self.b.send_grid(grid);
         return res;
+    }
+    pub fn event_dispatcher<Event>(&self) -> EventDispatcher<Event>{
+        EventDispatcher::new(&self.b.queue)
     }
 }
 
@@ -154,7 +174,8 @@ impl<'a> UpdateQueue<'a> {
 pub trait State: Sized {
     type Msg: Debug;
     type Param;
-    fn init<P: State>(builder: &mut Builder<P>, param: Self::Param) -> Self;
+    fn init<P: State>(builder: &mut Builder<P>, param: &Self::Param) -> Self;
+    fn after_init(component: &Component<Self>, system_events: &mut SystemEvents, param: &Self::Param) {}
     fn update(&mut self, msg: Self::Msg, queue: &UpdateQueue);
 }
 
@@ -176,8 +197,8 @@ impl ComponentType {
 pub type ComponentInner<T> = Arc<RefCell<T>>;
 
 pub struct Component<T: State> {
-    inner: ComponentInner<T>,
-    handle: ComponentType,
+    pub(crate) inner: ComponentInner<T>,
+    pub(crate) handle: ComponentType,
 }
 
 impl<T: State> Clone for Component<T> {

@@ -1,31 +1,31 @@
-use crate::{component::ComponentInner, Component, State};
+use std::{cell::RefCell, rc::Rc};
+
+use crate::{component::{ComponentInner, ComponentType}, update_queue::{self, front}, Component, State, UpdateQueue};
 
 
-pub trait Observer {
-    type Event;
+pub trait Subscriber<Event> {
+    fn observe(&mut self, event: &Event, queue: &UpdateQueue);
 }
 
-pub trait Subscriber {
-    type Event;
-    fn observe(&mut self, event: &Self::Event);
-}
-
+#[derive(Clone)]
 pub struct EventDispatcher<Event> {
-    subscribers: Vec<ComponentInner<dyn Subscriber<Event = Event>>>,
+    subscribers: Rc<RefCell<Vec<(ComponentInner<dyn Subscriber<Event>>, ComponentType)>>>,
+    queue: front::UpdateQueue,
 }
 
 impl<E> EventDispatcher<E> {
-    pub fn new() -> Self {
+    pub fn new(queue: &front::UpdateQueue) -> Self {
         Self {
-            subscribers: vec![],
+            subscribers: Rc::new(RefCell::new(vec![])),
+            queue: queue.clone(),
         }
     }
-    pub fn register<S: Subscriber<Event = E> + State + 'static>(&mut self, sub: Component<S>) {
-        self.subscribers.push(sub.inner() as ComponentInner<dyn Subscriber<Event = E>>)
+    pub fn register<S: Subscriber<E> + State + 'static>(&self, sub: &Component<S>) {
+        self.subscribers.borrow_mut().push((sub.inner().clone() as ComponentInner<dyn Subscriber<E>>, sub.handle.clone()));
     }
     pub fn emit(&self, event: E) {
-        self.subscribers.iter().for_each(|sub| {
-            sub.borrow_mut().observe(&event)
+        self.subscribers.borrow().iter().for_each(|(sub, handle)| {
+            sub.borrow_mut().observe(&event, &UpdateQueue::from_base(&self.queue, handle.clone()))
         })
     }
 }

@@ -15,11 +15,12 @@ pub(crate) mod observer;
 pub(crate) mod events;
 
 
-pub use component::{Builder, Component, UpdateQueue};
+pub use component::{Builder, Component, UpdateQueue, SystemEvents};
 pub use component::{Interaction, State};
 pub use frame::{FrameData, FrameHandle};
 pub use manager::{run, RenderManager};
 pub use render_actor::FrameMessage;
 pub use units::UserUnits::*;
 pub use update_queue::back::UpdateMsg;
-pub use observer::{EventDispatcher, Observer, Subscriber};
+pub use observer::{EventDispatcher, Subscriber};
+pub use events::{MouseEvent, KeyboardEvent, MouseButton, KeyboardKey, ButtonState};
