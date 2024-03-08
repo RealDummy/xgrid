@@ -1,7 +1,10 @@
 use std::{cell::RefCell, rc::Rc};
 
-use crate::{component::{ComponentInner, ComponentType}, update_queue::{self, front}, Component, State, UpdateQueue};
-
+use crate::{
+    component::{ComponentInner, ComponentType},
+    update_queue::front,
+    Component, State, UpdateQueue,
+};
 
 pub trait Subscriber<Event> {
     fn observe(&mut self, event: &Event, queue: &UpdateQueue);
@@ -21,11 +24,15 @@ impl<E> EventDispatcher<E> {
         }
     }
     pub fn register<S: Subscriber<E> + State + 'static>(&self, sub: &Component<S>) {
-        self.subscribers.borrow_mut().push((sub.inner().clone() as ComponentInner<dyn Subscriber<E>>, sub.handle.clone()));
+        self.subscribers.borrow_mut().push((
+            sub.inner().clone() as ComponentInner<dyn Subscriber<E>>,
+            sub.handle.clone(),
+        ));
     }
     pub fn emit(&self, event: E) {
         self.subscribers.borrow().iter().for_each(|(sub, handle)| {
-            sub.borrow_mut().observe(&event, &UpdateQueue::from_base(&self.queue, handle.clone()))
+            sub.borrow_mut()
+                .observe(&event, &UpdateQueue::from_base(&self.queue, handle.clone()))
         })
     }
 }

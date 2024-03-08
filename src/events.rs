@@ -1,6 +1,4 @@
-use crate::{units::VUnit};
-
-
+use crate::units::VUnit;
 
 pub struct Position {
     x: VUnit,
@@ -21,14 +19,14 @@ pub enum MouseButton {
 }
 pub enum MouseEvent {
     Move(Position),
-    Click(MouseButton)
+    Click(MouseButton),
 }
 
 pub struct KeyboardKey {
     pub key: char,
-    pub modifiers: winit::keyboard::ModifiersState
+    pub modifiers: winit::keyboard::ModifiersState,
 }
 pub enum KeyboardEvent {
     Press(KeyboardKey),
-    Release(KeyboardKey)
+    Release(KeyboardKey),
 }

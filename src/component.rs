@@ -1,7 +1,18 @@
-use std::{cell::RefCell, fmt::Debug, sync::{mpsc, Arc}};
+use std::{
+    cell::RefCell,
+    fmt::Debug,
+    sync::{mpsc, Arc},
+};
 
 use crate::{
-    events::{KeyboardEvent, MouseEvent}, frame::FrameHandle, grid::{GridBuilder, GridHandle, XName, YName}, handle::HandleLike, manager::{BBox, Borders, Rect}, observer, render_actor::{FrameMessage, UpdateMessage}, update_queue::{self, back::QualifiedUpdateMsg, front}, EventDispatcher, Subscriber, UpdateMsg
+    events::{KeyboardEvent, MouseEvent},
+    frame::FrameHandle,
+    grid::{GridBuilder, GridHandle, XName, YName},
+    handle::HandleLike,
+    manager::{BBox, Borders, Rect},
+    render_actor::{FrameMessage, UpdateMessage},
+    update_queue::{self, back::QualifiedUpdateMsg, front},
+    EventDispatcher, Subscriber, UpdateMsg,
 };
 
 pub struct SystemEvents {
@@ -9,10 +20,16 @@ pub struct SystemEvents {
     keyboard_dispatcher: EventDispatcher<KeyboardEvent>,
 }
 impl SystemEvents {
-    pub fn add_mouse_observer<C: State + Subscriber<MouseEvent> + 'static>(&mut self, component: &Component<C>) {
+    pub fn add_mouse_observer<C: State + Subscriber<MouseEvent> + 'static>(
+        &mut self,
+        component: &Component<C>,
+    ) {
         self.mouse_dispatcher.register(component)
     }
-    pub fn add_keyboard_observer<C: State + Subscriber<KeyboardEvent> + 'static>(&mut self, component: &Component<C>) {
+    pub fn add_keyboard_observer<C: State + Subscriber<KeyboardEvent> + 'static>(
+        &mut self,
+        component: &Component<C>,
+    ) {
         self.keyboard_dispatcher.register(component)
     }
 }
@@ -49,10 +66,14 @@ impl ComponentBuilder {
             queue,
         }
     }
-    pub fn send_frame(&mut self, grid: GridHandle, x: Option<XName>, y: Option<YName>) -> FrameHandle {
+    pub fn send_frame(
+        &mut self,
+        grid: GridHandle,
+        x: Option<XName>,
+        y: Option<YName>,
+    ) -> FrameHandle {
         let res = FrameHandle::new(self.frame_count);
-        self
-            .render_sender
+        self.render_sender
             .send(UpdateMessage::NewFrame(
                 grid,
                 x,
@@ -77,14 +98,13 @@ impl ComponentBuilder {
         return res;
     }
     pub fn send_floating(&mut self, size: BBox) -> FrameHandle {
-        self
-        .render_sender
-        .send(UpdateMessage::NewFloatingFrame(FrameMessage {
-            size: Some(size.into()),
-            margin: None,
-            color: Some([255; 4]),
-        }))
-        .unwrap();
+        self.render_sender
+            .send(UpdateMessage::NewFloatingFrame(FrameMessage {
+                size: Some(size.into()),
+                margin: None,
+                color: Some([255; 4]),
+            }))
+            .unwrap();
         let res = FrameHandle::new(self.frame_count);
         self.frame_count += 1;
         return res;
@@ -104,7 +124,7 @@ impl ComponentBuilder {
         assert!(self.frame_count == 0);
         let res = self.send_floating(size);
         let mut b = Builder::first(self);
-        let app = Component::new(App::init(&mut b, &() ), ComponentType::Floating(res));
+        let app = Component::new(App::init(&mut b, &()), ComponentType::Floating(res));
         App::after_init(&app, &mut self.dispatcher, &());
         return app;
     }
@@ -114,14 +134,19 @@ impl ComponentBuilder {
 }
 impl<'a> Builder<'a, ()> {
     pub(crate) fn first(b: &'a mut ComponentBuilder) -> Self {
-        Self { b, parent: Component::new((), ComponentType::Floating(FrameHandle::new(0))) }
+        Self {
+            b,
+            parent: Component::new((), ComponentType::Floating(FrameHandle::new(0))),
+        }
     }
 }
 
 impl<'a, C: State> Builder<'a, C> {
-
     pub(crate) fn new(b: &'a mut ComponentBuilder, component: Component<C>) -> Self {
-        Self { b, parent: component }
+        Self {
+            b,
+            parent: component,
+        }
     }
     pub fn frame<T: State>(
         &mut self,
@@ -131,8 +156,14 @@ impl<'a, C: State> Builder<'a, C> {
         y: Option<YName>,
     ) -> Component<T> {
         let res = self.b.send_frame(grid, x, y);
-        let me = Component::new(T::init(&mut Builder::new(self.b, Component::clone(&self.parent)), &param), ComponentType::GridMember(res, grid));
-        T::after_init(&me,&mut self.b.dispatcher, &param);
+        let me = Component::new(
+            T::init(
+                &mut Builder::new(self.b, Component::clone(&self.parent)),
+                &param,
+            ),
+            ComponentType::GridMember(res, grid),
+        );
+        T::after_init(&me, &mut self.b.dispatcher, &param);
         return me;
     }
     pub fn floating_frame(&mut self, param: C::Param, size: Rect<i32>) -> Component<C> {
@@ -150,7 +181,7 @@ impl<'a, C: State> Builder<'a, C> {
         let res = self.b.send_grid(grid);
         return res;
     }
-    pub fn event_dispatcher<Event>(&self) -> EventDispatcher<Event>{
+    pub fn event_dispatcher<Event>(&self) -> EventDispatcher<Event> {
         EventDispatcher::new(&self.b.queue)
     }
 }
@@ -175,7 +206,12 @@ pub trait State: Sized {
     type Msg: Debug;
     type Param;
     fn init<P: State>(builder: &mut Builder<P>, param: &Self::Param) -> Self;
-    fn after_init(component: &Component<Self>, system_events: &mut SystemEvents, param: &Self::Param) {}
+    fn after_init(
+        _component: &Component<Self>,
+        _system_events: &mut SystemEvents,
+        _param: &Self::Param,
+    ) {
+    }
     fn update(&mut self, msg: Self::Msg, queue: &UpdateQueue);
 }
 
@@ -228,7 +264,7 @@ impl<T: State> Component<T> {
     }
     pub(crate) fn inner(&self) -> ComponentInner<T> {
         self.inner.clone()
-    } 
+    }
 }
 
 #[derive(Debug)]

@@ -5,7 +5,7 @@ use std::{
 };
 
 use bytemuck::{Pod, Zeroable};
-use log::{debug, warn};
+use log::warn;
 use wgpu::{util::DeviceExt, SurfaceError};
 use winit::{
     dpi::{LogicalSize, PhysicalSize},
@@ -16,7 +16,19 @@ use winit::{
 };
 
 use crate::{
-    component::{self, ComponentBuilder, State}, events::{KeyboardEvent, MouseEvent}, frame::{FrameHandle, FrameRenderer}, grid::GridRenderer, handle::HandleLike, render_actor::{FrameMessage, UpdateMessage}, units::VUnit, update_queue::{self, back::QualifiedUpdateMsg, front::{self, UpdateQueue}}, ButtonState, Component, EventDispatcher, MouseButton, Subscriber
+    component::{self, ComponentBuilder, State},
+    events::MouseEvent,
+    frame::{FrameHandle, FrameRenderer},
+    grid::GridRenderer,
+    handle::HandleLike,
+    render_actor::{FrameMessage, UpdateMessage},
+    units::VUnit,
+    update_queue::{
+        self,
+        back::QualifiedUpdateMsg,
+        front::{self},
+    },
+    ButtonState, Component, MouseButton,
 };
 
 const VERTICES: &[Vertex] = &[
@@ -356,13 +368,12 @@ impl<'a> RenderManager<'a> {
             self.surface.configure(&self.device, &self.config);
         }
     }
-    pub fn run_forever(mut self, barrier: Arc<Barrier>) {
+    pub fn run_forever(mut self, _barrier: Arc<Barrier>) {
         let mut count = 0;
         loop {
             count += 1;
             let msg = self.msg_recv.recv().expect("update message recv err");
-            if let UpdateMessage::Exit = msg {
-            }
+            if let UpdateMessage::Exit = msg {}
             match msg {
                 UpdateMessage::Draw => {
                     let rr = self.render();
@@ -374,7 +385,6 @@ impl<'a> RenderManager<'a> {
                         SurfaceError::Lost => self.resize(self.size),
                         _ => warn!("{e}"),
                     }
-
                 }
                 UpdateMessage::Prepare => self.prepare(),
                 UpdateMessage::ModifyFrame(h, f) => {
@@ -436,11 +446,9 @@ impl<'a> RenderManager<'a> {
                     break;
                 }
             }
-        };
+        }
     }
 }
-
-
 
 pub fn run<App: State<Param = ()>>() {
     cfg_if::cfg_if! {
@@ -476,20 +484,24 @@ pub fn run<App: State<Param = ()>>() {
     let window = WindowBuilder::new().build(&event_loop).unwrap();
     let (send, recv) = mpsc::channel();
     let barrier = Arc::new(Barrier::new(2));
-    
+
     thread::scope(|s| {
-        let (queue, renderer) = pollster::block_on(RenderManager::new(&window, send.clone(), recv, proxy));
+        let (queue, renderer) =
+            pollster::block_on(RenderManager::new(&window, send.clone(), recv, proxy));
         let mut builder = ComponentBuilder::new(send.clone(), queue.clone());
         let barrier_ref = &barrier;
         s.spawn(move || {
             renderer.run_forever(Arc::clone(barrier_ref));
         });
-        let mut app: Component<App> = builder.send_app(Rect {
-            x: 0,
-            y: 0,
-            w: 400,
-            h: 400,
-        }.into());
+        let _app: Component<App> = builder.send_app(
+            Rect {
+                x: 0,
+                y: 0,
+                w: 400,
+                h: 400,
+            }
+            .into(),
+        );
         let exit_status =
             event_loop.run(move |event: Event<_>, target: &EventLoopWindowTarget<_>| {
                 match event {
@@ -534,13 +546,14 @@ pub fn run<App: State<Param = ()>>() {
                                 send.send(UpdateMessage::Prepare).unwrap();
 
                                 send.send(UpdateMessage::Draw).unwrap();
-
                             }
                             WindowEvent::MouseInput { state, .. } => {
-                                builder.emit_mouse(MouseEvent::Click(MouseButton::Left(match state {
-                                    ElementState::Pressed => ButtonState::Pressed,
-                                    ElementState::Released => ButtonState::Released,
-                                })));
+                                builder.emit_mouse(MouseEvent::Click(MouseButton::Left(
+                                    match state {
+                                        ElementState::Pressed => ButtonState::Pressed,
+                                        ElementState::Released => ButtonState::Released,
+                                    },
+                                )));
                             }
                             _ => {}
                         }
