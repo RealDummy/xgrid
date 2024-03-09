@@ -14,8 +14,10 @@ impl State for Div {
     type Msg = bool;
     type Param = (i32, EventDispatcher<i32>);
     fn init<P: State>(_builder: &mut Builder<P>, param: &Self::Param) -> Self {
+        let mut colors = [255,0,0];
+        colors.rotate_left(param.0 as usize % 3);
         Self {
-            color: [255, 0, 0, Self::DA],
+            color: [colors[0], colors[1], colors[2], Self::DA],
             i: param.0,
         }
     }
@@ -48,6 +50,7 @@ impl Subscriber<i32> for Div {
 struct App {
     states: Vec<Component<Div>>,
     state_event: EventDispatcher<i32>,
+    float: Component<Div>,
     i: i32,
 }
 
@@ -82,6 +85,9 @@ impl State for App {
                 .into_iter()
                 .map(|i| builder.frame((i, state_event.clone()), g, None, None))
                 .collect(),
+                float: builder.floating_frame((1, state_event.clone()), Rect {
+                    x: 100, y: 100, w: 300, h: 300
+                }),
             state_event,
             i: 0,
         }

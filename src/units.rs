@@ -32,8 +32,11 @@ impl VUnit {
 
         return full_pix + sub_pix;
     }
-    pub fn new(p: i32) -> VUnit {
+    pub fn new<T: Into<VUnit>>(p: T) -> VUnit {
         p.into()
+    }
+    pub(crate) fn truct_to_whole(&self) -> i32 {
+        self.0 >> Self::PRECISION_BITS
     }
 }
 
@@ -62,6 +65,12 @@ impl Ord for VUnit {
 impl From<i32> for VUnit {
     fn from(value: i32) -> Self {
         VUnit(value << Self::PRECISION_BITS)
+    }
+}
+
+impl From<u32> for VUnit {
+    fn from(value: u32) -> Self {
+        VUnit((value as i32) << Self::PRECISION_BITS)
     }
 }
 

@@ -11,7 +11,7 @@ use crate::{
     handle::HandleLike,
     manager::{BBox, Borders, Rect},
     render_actor::{FrameMessage, UpdateMessage},
-    update_queue::{self, back::QualifiedUpdateMsg, front},
+    update_queue::{self, back::Update, front},
     EventDispatcher, Subscriber, UpdateMsg,
 };
 
@@ -80,15 +80,7 @@ impl ComponentBuilder {
                 y,
                 FrameMessage {
                     size: None,
-                    margin: Some(
-                        Borders {
-                            top: 10,
-                            bottom: 10,
-                            left: 10,
-                            right: 10,
-                        }
-                        .into(),
-                    ),
+                    margin: None,
                     color: Some([255; 4]),
                 },
                 res,
@@ -166,9 +158,9 @@ impl<'a, C: State> Builder<'a, C> {
         T::after_init(&me, &mut self.b.dispatcher, &param);
         return me;
     }
-    pub fn floating_frame(&mut self, param: C::Param, size: Rect<i32>) -> Component<C> {
+    pub fn floating_frame<T: State>(&mut self, param: T::Param, size: Rect<i32>) -> Component<T> {
         let res = self.b.send_floating(size.into());
-        Component::new(C::init(self, &param), ComponentType::Floating(res))
+        Component::new(T::init(self, &param), ComponentType::Floating(res))
     }
     pub fn grid_builder(&mut self) -> GridBuilder {
         let parent = match self.parent.handle {
@@ -195,10 +187,7 @@ impl<'a> UpdateQueue<'a> {
         Self { q, handle }
     }
     pub fn push(&self, msg: UpdateMsg) {
-        self.q.send(QualifiedUpdateMsg {
-            msg,
-            dst: self.handle.clone(),
-        });
+        self.q.send(Update::User(msg, self.handle.clone()));
     }
 }
 

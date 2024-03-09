@@ -2,6 +2,7 @@ use std::{mem::size_of, vec::Vec};
 
 use bytemuck::{Pod, Zeroable};
 
+use log::debug;
 use wgpu::{
     include_wgsl, BufferUsages, Device, MultisampleState, RenderPass, RenderPipeline,
     RenderPipelineDescriptor, SurfaceConfiguration,

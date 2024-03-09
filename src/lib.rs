@@ -18,7 +18,7 @@ pub use component::{Builder, Component, SystemEvents, UpdateQueue};
 pub use component::{Interaction, State};
 pub use events::{ButtonState, KeyboardEvent, KeyboardKey, MouseButton, MouseEvent};
 pub use frame::{FrameData, FrameHandle};
-pub use manager::{run, RenderManager};
+pub use manager::{run, RenderManager, Rect};
 pub use observer::{EventDispatcher, Subscriber};
 pub use render_actor::FrameMessage;
 pub use units::UserUnits::*;

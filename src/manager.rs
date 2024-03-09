@@ -5,7 +5,7 @@ use std::{
 };
 
 use bytemuck::{Pod, Zeroable};
-use log::warn;
+use log::{warn, debug};
 use wgpu::{util::DeviceExt, SurfaceError};
 use winit::{
     dpi::{LogicalSize, PhysicalSize},
@@ -24,9 +24,7 @@ use crate::{
     render_actor::{FrameMessage, UpdateMessage},
     units::VUnit,
     update_queue::{
-        self,
-        back::QualifiedUpdateMsg,
-        front::{self},
+        self, back::Update, front
     },
     ButtonState, Component, MouseButton,
 };
@@ -94,10 +92,10 @@ pub struct BBox {
 }
 
 pub struct Rect<T: Into<VUnit>> {
-    x: T,
-    y: T,
-    w: T,
-    h: T,
+    pub x: T,
+    pub y: T,
+    pub w: T,
+    pub h: T,
 }
 impl<T: Into<VUnit>> Into<BBox> for Rect<T> {
     fn into(self) -> BBox {
@@ -110,6 +108,7 @@ impl<T: Into<VUnit>> Into<BBox> for Rect<T> {
         }
     }
 }
+
 
 #[derive(Pod, Zeroable, Clone, Copy, Debug)]
 #[repr(C)]
@@ -147,7 +146,7 @@ pub struct RenderManager<'a> {
     vertex_buffer: wgpu::Buffer,
     surface: wgpu::Surface<'a>,
     window: &'a winit::window::Window,
-    size: winit::dpi::PhysicalSize<u32>,
+    size: winit::dpi::LogicalSize<u32>,
     index_render_target: wgpu::Texture,
     base_handle: FrameHandle,
     msg_send: mpsc::Sender<UpdateMessage>,
@@ -168,17 +167,8 @@ impl<'a> RenderManager<'a> {
         recv: mpsc::Receiver<UpdateMessage>,
         proxy: winit::event_loop::EventLoopProxy<()>,
     ) -> (update_queue::front::UpdateQueue, Self) {
-        let size = LogicalSize::<i32> {
-            width: 400,
-            height: 400,
-        }
-        .to_physical(window.scale_factor());
-        let _world_view = WorldView {
-            x: 0.into(),
-            y: 0.into(),
-            w: VUnit::new(size.width),
-            h: VUnit::new(size.height),
-        };
+        let size_pixels = window.inner_size();
+        let size: LogicalSize<u32> = size_pixels.to_logical(window.scale_factor());
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: wgpu::Backends::all(),
             ..Default::default()
@@ -228,8 +218,8 @@ impl<'a> RenderManager<'a> {
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format: surface_format,
-            width: size.width as u32,
-            height: size.height as u32,
+            width: size_pixels.width as u32,
+            height: size_pixels.height as u32,
             present_mode: *surface_caps
                 .present_modes
                 .iter()
@@ -352,7 +342,6 @@ impl<'a> RenderManager<'a> {
         self.queue.submit(iter::once(encoder.finish()));
         self.window.pre_present_notify();
         output.present();
-
         Ok(())
     }
     fn prepare(&mut self) {
@@ -360,18 +349,17 @@ impl<'a> RenderManager<'a> {
             .prepare(&mut self.frame_renderer, &self.queue);
         self.frame_renderer.prepare(&self.queue);
     }
-    fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
+    fn resize(&mut self, new_size: winit::dpi::LogicalSize<u32>, scale_factor: f64) {
+        let size_pixels = new_size.to_physical(scale_factor);
         if new_size.width > 0 && new_size.height > 0 {
             self.size = new_size;
-            self.config.width = new_size.width;
-            self.config.height = new_size.height;
+            self.config.width = size_pixels.width;
+            self.config.height = size_pixels.height;
             self.surface.configure(&self.device, &self.config);
         }
     }
-    pub fn run_forever(mut self, _barrier: Arc<Barrier>) {
-        let mut count = 0;
+    pub fn run_forever(mut self) {
         loop {
-            count += 1;
             let msg = self.msg_recv.recv().expect("update message recv err");
             if let UpdateMessage::Exit = msg {}
             match msg {
@@ -382,7 +370,7 @@ impl<'a> RenderManager<'a> {
                         continue;
                     };
                     match e {
-                        SurfaceError::Lost => self.resize(self.size),
+                        //SurfaceError::Lost => self.resize(self.size, scale_factor),
                         _ => warn!("{e}"),
                     }
                 }
@@ -391,12 +379,6 @@ impl<'a> RenderManager<'a> {
                     let FrameMessage { size, color, .. } = f;
                     if let Some(size) = size {
                         self.frame_renderer.update(h.index(), &size);
-                        if h.index() == 0 {
-                            self.resize(PhysicalSize {
-                                width: size.w.pix() as u32,
-                                height: size.h.pix() as u32,
-                            })
-                        }
                     }
                     if let Some(color) = color {
                         self.frame_renderer.update_color(h.index(), color);
@@ -441,6 +423,12 @@ impl<'a> RenderManager<'a> {
                     self.grid_to_frame_map.push(grid_builder.parent());
                     self.grid_renderer.add(grid_builder.build());
                 }
+                UpdateMessage::ResizeWindow(logical, scale_factor) => {
+                    self.frame_renderer.update(0, &Rect {
+                        x: 0, y: 0, w: logical.width, h: logical.height
+                    }.into());
+                    self.resize(logical, scale_factor);
+                }
                 UpdateMessage::Exit => {
                     self.proxy.send_event(()).unwrap();
                     break;
@@ -483,15 +471,13 @@ pub fn run<App: State<Param = ()>>() {
     let proxy = event_loop.create_proxy();
     let window = WindowBuilder::new().build(&event_loop).unwrap();
     let (send, recv) = mpsc::channel();
-    let barrier = Arc::new(Barrier::new(2));
 
     thread::scope(|s| {
         let (queue, renderer) =
             pollster::block_on(RenderManager::new(&window, send.clone(), recv, proxy));
         let mut builder = ComponentBuilder::new(send.clone(), queue.clone());
-        let barrier_ref = &barrier;
         s.spawn(move || {
-            renderer.run_forever(Arc::clone(barrier_ref));
+            renderer.run_forever();
         });
         let _app: Component<App> = builder.send_app(
             Rect {
@@ -502,6 +488,7 @@ pub fn run<App: State<Param = ()>>() {
             }
             .into(),
         );
+        let mut scale_factor = window.scale_factor();
         let exit_status =
             event_loop.run(move |event: Event<_>, target: &EventLoopWindowTarget<_>| {
                 match event {
@@ -522,25 +509,12 @@ pub fn run<App: State<Param = ()>>() {
                             } => {
                                 send.send(UpdateMessage::Exit).unwrap();
                             }
-                            WindowEvent::Resized(physical_size) => queue.send(QualifiedUpdateMsg {
-                                msg: crate::UpdateMsg::Frame(FrameMessage {
-                                    size: Some(
-                                        Rect {
-                                            x: 0,
-                                            y: 0,
-                                            w: physical_size.width as i32,
-                                            h: physical_size.height as i32,
-                                        }
-                                        .into(),
-                                    ),
-                                    color: None,
-                                    margin: None,
-                                }),
-                                dst: component::ComponentType::Floating(FrameHandle::new(0)),
-                            }),
-                            WindowEvent::ScaleFactorChanged { .. } => {
-                                ()
-                                //self.scale(*scale_factor);
+                            WindowEvent::Resized(physical_size) => {
+                                let logical_size = physical_size.to_logical(scale_factor);
+                                queue.send(Update::System(update_queue::back::SystemUpdates::Resized(logical_size, scale_factor)));
+                            },
+                            WindowEvent::ScaleFactorChanged { scale_factor: new_factor, .. } => {
+                                scale_factor = *new_factor;
                             }
                             WindowEvent::RedrawRequested => {
                                 send.send(UpdateMessage::Prepare).unwrap();

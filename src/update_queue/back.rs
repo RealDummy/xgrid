@@ -1,10 +1,12 @@
 use std::sync::mpsc;
 
+use winit::dpi::LogicalSize;
+
 use crate::{
     component::ComponentType,
     grid::{XName, YName},
     manager::BBox,
-    render_actor::FrameMessage,
+    render_actor::{FrameMessage, UpdateMessage},
     units::UserUnits,
 };
 
@@ -14,26 +16,19 @@ pub enum Bounds {
     Abs(BBox),
 }
 
-pub struct QualifiedUpdateMsg {
-    pub msg: UpdateMsg,
-    pub dst: ComponentType,
+pub enum SystemUpdates {
+    Resized(LogicalSize<u32>, f64)
 }
+
+pub enum Update {
+    User(UpdateMsg, ComponentType),
+    System(SystemUpdates),
+}
+
 
 #[derive(Clone)]
 pub enum UpdateMsg {
     Frame(FrameMessage),
     GridX(XName, UserUnits),
     GridY(YName, UserUnits),
-}
-
-pub type UpdateSend = mpsc::SyncSender<QualifiedUpdateMsg>;
-pub type UpdateRecv = mpsc::Receiver<QualifiedUpdateMsg>;
-
-pub struct UpdateReciever {
-    recv: UpdateRecv,
-}
-impl UpdateReciever {
-    pub fn new(recv: UpdateRecv) -> Self {
-        Self { recv }
-    }
 }

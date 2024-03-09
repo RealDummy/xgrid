@@ -13,6 +13,7 @@ pub struct GridMessage {}
 
 #[derive(Debug)]
 pub enum UpdateMessage {
+    ResizeWindow(winit::dpi::LogicalSize<u32>, f64),
     ModifyFrame(FrameHandle, FrameMessage),
     NewFrame(
         GridHandle,

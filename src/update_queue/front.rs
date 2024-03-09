@@ -2,9 +2,9 @@ use std::{process::exit, sync::mpsc};
 
 use log::warn;
 
-use crate::render_actor::UpdateMessage;
+use crate::{render_actor::UpdateMessage, UpdateMsg};
 
-use super::back::{QualifiedUpdateMsg, UpdateMsg};
+use super::back::{SystemUpdates, Update};
 
 #[derive(Clone)]
 pub struct UpdateQueue {
@@ -17,17 +17,23 @@ impl UpdateQueue {
             sender: sender.clone(),
         }
     }
-    pub fn send(&self, msg: QualifiedUpdateMsg) {
-        let QualifiedUpdateMsg { msg, dst } = msg;
-        use UpdateMsg::*;
+    pub fn send(&self, msg: Update) {
         match msg {
-            Frame(f) => {
-                if let Err(e) = self.sender.send(UpdateMessage::ModifyFrame(dst.frame(), f)) {
-                    warn!("{e}");
-                    exit(0);
+            Update::User(msg, dst ) => match msg {
+                UpdateMsg::Frame(f) => {
+                    if let Err(e) = self.sender.send(UpdateMessage::ModifyFrame(dst.frame(), f)) {
+                        warn!("{e}");
+                        exit(0);
+                    }
+                }
+                _ => (),
+            }
+            Update::System(msg) => match  msg {
+                SystemUpdates::Resized(logical_size, scale_factor) => {
+                    self.sender.send(UpdateMessage::ResizeWindow(logical_size, scale_factor)).unwrap();
                 }
             }
-            _ => (),
         }
+        
     }
 }
