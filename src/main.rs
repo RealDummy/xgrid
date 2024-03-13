@@ -116,6 +116,9 @@ impl Subscriber<MouseEvent> for App {
                 self.state_event.emit(self.i);
                 self.i += 1;
             }
+            MouseEvent::Move(pos) => {
+
+            },
             _ => (),
         }
     }
