@@ -370,7 +370,7 @@ impl<'a> RenderManager<'a> {
                         continue;
                     };
                     match e {
-                        //SurfaceError::Lost => self.resize(self.size, scale_factor),
+                        SurfaceError::Lost => self.resize(self.size, self.window.scale_factor()),
                         _ => warn!("{e}"),
                     }
                 }

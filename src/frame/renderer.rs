@@ -204,6 +204,9 @@ impl FrameRenderer {
             Some(u) => Some(usize::max(u, index)),
         }
     }
+    pub fn resize(&mut self, bounds: &BBox) {
+        
+    }
     pub fn update_color(&mut self, index: usize, color: [u8; 4]) {
         let frame = &mut self.data[index];
         frame.color = color;
